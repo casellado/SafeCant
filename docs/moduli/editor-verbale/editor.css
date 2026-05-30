@@ -1,0 +1,253 @@
+/* ============================================================================
+   SafeCant — moduli/editor-verbale/editor.css
+   ----------------------------------------------------------------------------
+   Stili SPECIFICI dell'Editor Verbale. Su token, classi BEM `ed-`.
+   Copre: stepper, card presente, livelli NC per gravità, box firma, action bar
+   sticky, anteprima firma redattore.
+   ============================================================================ */
+
+/* ----- Shell editor --------------------------------------------------------
+   Spazio in fondo pari all'altezza della action bar sticky, così l'ultimo
+   contenuto non resta nascosto sotto la barra. */
+.ed-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-5);
+  padding-bottom: 5rem;
+}
+
+/* ----- Stepper -------------------------------------------------------------
+   Sticky sotto l'appbar. Su mobile la lista scorre orizzontalmente se i 4 step
+   non entrano: meglio uno scroll controllato che label tagliate. */
+.ed-stepper {
+  position: sticky;
+  top: 0;
+  z-index: var(--sc-z-sticky);
+  background: var(--sc-color-bg);
+  padding-block: var(--sc-space-2);
+}
+
+.ed-stepper__list {
+  display: flex;
+  gap: var(--sc-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* scroll fluido su iOS */
+  scrollbar-width: none;             /* Firefox: nasconde la barra */
+}
+.ed-stepper__list::-webkit-scrollbar { display: none; } /* WebKit: idem */
+
+.ed-stepper__item {
+  flex: 1 1 auto;
+  min-width: max-content;
+}
+
+/* Ogni step è un bottone: numero/spunta + label. Touch target garantito. */
+.ed-stepper__btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-space-2);
+  width: 100%;
+  min-height: var(--sc-touch-min);
+  padding: var(--sc-space-2) var(--sc-space-3);
+  border-radius: var(--sc-radius-md);
+  background: var(--sc-color-surface);
+  border: var(--sc-border-width) solid var(--sc-color-border);
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-sm);
+  font-weight: var(--sc-weight-medium);
+  white-space: nowrap;
+  transition: background-color var(--sc-duration-fast) var(--sc-ease-standard),
+              border-color var(--sc-duration-fast) var(--sc-ease-standard),
+              color var(--sc-duration-fast) var(--sc-ease-standard);
+}
+.ed-stepper__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Pallino numero/spunta dello step. */
+.ed-stepper__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--sc-color-surface-alt);
+  color: var(--sc-color-text-muted);
+  font-weight: var(--sc-weight-bold);
+  font-size: var(--sc-text-xs);
+}
+
+/* Step CORRENTE: bordo e numero nel colore primario. */
+.ed-stepper__btn.is-corrente {
+  border-color: var(--sc-color-primary);
+  color: var(--sc-color-text);
+}
+.ed-stepper__btn.is-corrente .ed-stepper__num {
+  background: var(--sc-color-primary);
+  color: var(--sc-color-on-primary);
+}
+
+/* Step COMPLETO (non corrente): spunta verde. */
+.ed-stepper__btn.is-completo .ed-stepper__num {
+  background: var(--sc-success-700);
+  color: #ffffff;
+}
+
+.ed-stepper__posizione {
+  margin: 0;
+  padding-top: var(--sc-space-2);
+  font-size: var(--sc-text-sm);
+  color: var(--sc-color-text-muted);
+}
+
+/* La label dello step si nasconde su schermi molto stretti, lasciando il numero;
+   il nome resta comunque annunciato dallo screen reader. */
+@media (max-width: 400px) {
+  .ed-stepper__label { display: none; }
+}
+
+/* ----- Layout due colonne (progressive su desktop) ------------------------- */
+.ed-due-colonne {
+  display: grid;
+  gap: var(--sc-space-4);
+}
+@media (min-width: 640px) {
+  .ed-due-colonne { grid-template-columns: 1fr 1fr; }
+}
+
+/* ----- Card presente -------------------------------------------------------- */
+.ed-presenti { list-style: none; margin: 0; padding: 0; }
+
+.ed-presente {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-3);
+}
+
+.ed-presente__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ed-presente__nome { font-weight: var(--sc-weight-semibold); }
+.ed-presente__meta { font-size: var(--sc-text-sm); color: var(--sc-color-text-muted); }
+
+/* Stato firma sotto il nome. Colori semantici dai token di stato. */
+.ed-presente__firma { font-size: var(--sc-text-sm); font-weight: var(--sc-weight-medium); }
+.ed-presente__firma.is-rifiuto { color: var(--sc-danger-700); }
+.ed-presente__firma.is-attesa { color: var(--sc-color-text-muted); }
+
+.ed-presente__azioni {
+  gap: var(--sc-space-2);
+  flex-wrap: wrap;
+}
+
+/* Opzione persona nel bottom sheet: bottone-card a tutta larghezza. */
+.ed-persona-opzione {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: start;
+  cursor: pointer;
+}
+.ed-persona-opzione:hover { background: var(--sc-color-surface-alt); }
+
+.ed-ricerca-risultati {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* ----- Livelli NC (colori per gravità) -------------------------------------
+   Quando selezionato (aria-checked=true), ogni livello assume il proprio colore
+   di gravità dai token --sc-nc-*. Il colore non è l'unico veicolo: il testo del
+   livello è sempre presente (WCAG 1.4.1). */
+.ed-nc-livello[aria-checked="true"].is-gravissima { background: var(--sc-nc-gravissima); border-color: var(--sc-nc-gravissima); color: #fff; }
+.ed-nc-livello[aria-checked="true"].is-grave      { background: var(--sc-nc-grave);      border-color: var(--sc-nc-grave);      color: #fff; }
+.ed-nc-livello[aria-checked="true"].is-media      { background: var(--sc-nc-media);      border-color: var(--sc-nc-media);      color: #fff; }
+.ed-nc-livello[aria-checked="true"].is-lieve      { background: var(--sc-nc-lieve);      border-color: var(--sc-nc-lieve);      color: #fff; }
+
+.ed-nc-scadenza {
+  margin: 0;
+  padding: var(--sc-space-2) var(--sc-space-3);
+  background: var(--sc-color-surface-alt);
+  border-radius: var(--sc-radius-sm);
+  font-size: var(--sc-text-sm);
+}
+
+.ed-nc-lista { list-style: none; margin: 0; padding: 0; }
+
+/* ----- Box e canvas firma (riuso del pattern di impostazioni) --------------- */
+.ed-firma-box {
+  border: 2px dashed var(--sc-color-border-strong);
+  border-radius: var(--sc-radius-md);
+  background: var(--sc-color-surface);
+  overflow: hidden;
+}
+.ed-firma-canvas {
+  display: block;
+  width: 100%;
+  height: 220px;
+  touch-action: none;
+  cursor: crosshair;
+}
+.ed-firma-istruzione { text-align: center; }
+.ed-firma-azioni { margin-top: var(--sc-space-4); }
+
+/* Anteprima firma redattore: fondo bianco dedicato così la firma nera resta
+   visibile anche in tema scuro (coerente con la scelta in impostazioni). */
+.ed-firma-red-anteprima {
+  display: flex;
+  justify-content: center;
+  padding: var(--sc-space-3);
+  background: var(--sc-color-surface-alt);
+  border-radius: var(--sc-radius-md);
+}
+.ed-firma-red-anteprima__img {
+  max-height: 5rem;
+  width: auto;
+  background: #ffffff;
+  padding: var(--sc-space-2);
+  border-radius: var(--sc-radius-sm);
+}
+
+.ed-firma-riga { padding: var(--sc-space-2) 0; }
+
+/* ----- Action bar sticky ----------------------------------------------------
+   In fondo alla vista, sopra la safe-area inferiore. Sticky così resta a portata
+   di pollice mentre si scorre il contenuto del lungo step. */
+.ed-actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--sc-z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--sc-space-3);
+  padding: var(--sc-space-3) 0;
+  padding-bottom: calc(var(--sc-space-3) + env(safe-area-inset-bottom));
+  background: var(--sc-color-bg);
+  border-top: var(--sc-border-width) solid var(--sc-color-border);
+}
+.ed-actionbar__spacer { flex: 1; }
+
+/* ----- Mancanze (modal finalizza) ------------------------------------------
+   Ogni mancanza è un bottone-link a tutta larghezza che porta allo step. */
+.ed-mancanza {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: start;
+  color: var(--sc-danger-700);
+}
+.ed-mancanza::before {
+  content: '→';
+  margin-inline-end: var(--sc-space-2);
+}

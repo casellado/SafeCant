@@ -1,0 +1,116 @@
+/* ============================================================================
+   SafeCant — moduli/cruscotto/cruscotto.css
+   ----------------------------------------------------------------------------
+   Stili SPECIFICI della vista Cruscotto. Minimi e basati solo sui token.
+   Classi BEM con prefisso `cru-`.
+   ============================================================================ */
+
+/* ----- Barra di stato (connessione + coda) ---------------------------------
+   Sottile, non invadente: è informazione di contorno, non il contenuto. */
+.cru-statusbar {
+  font-size: var(--sc-text-sm);
+}
+
+.cru-coda {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sc-space-1);
+  padding: 2px var(--sc-space-3);
+  border-radius: var(--sc-radius-pill);
+  background: var(--sc-warning-100);
+  color: var(--sc-warning-700);
+  font-weight: var(--sc-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Invia ora" dentro la pillola coda: compatto, non sovrasta il contatore.
+   Margine iniziale per staccarlo dal testo "in coda". */
+.cru-coda__invia {
+  margin-inline-start: var(--sc-space-2);
+  min-height: auto;
+  padding: 2px var(--sc-space-3);
+  font-size: var(--sc-text-xs);
+}
+
+/* ----- Avviso aggiornamento app --------------------------------------------
+   Accento informativo sul bordo iniziale per distinguerlo dalle card verbale. */
+.cru-aggiornamento {
+  border-inline-start: 3px solid var(--sc-color-primary);
+}
+
+/* ----- Lista ----------------------------------------------------------------
+   <ul role=list> resettato (no bullet, no padding); la spaziatura tra card la
+   dà .sc-stack nel markup. */
+.cru-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ----- Card verbale --------------------------------------------------------- */
+.cru-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-3);
+}
+
+/* Riga superiore: data a sinistra, badge a destra. Wrappa su schermi stretti. */
+.cru-card__top {
+  gap: var(--sc-space-2);
+}
+
+.cru-card__data {
+  font-weight: var(--sc-weight-semibold);
+  font-variant-numeric: tabular-nums; /* date allineate tra card diverse */
+}
+
+/* Gruppo dei badge (stato + NC): sostituisce lo style inline rimosso dal markup. */
+.cru-card__badges {
+  gap: var(--sc-space-2);
+}
+
+/* Oggetto: leggibile, può andare a capo; nessun troncamento CSS perché il JS
+   tronca già a lunghezza ragionata (tronca()), preservando le parole. */
+.cru-card__oggetto {
+  margin: 0;
+  color: var(--sc-color-text);
+  line-height: var(--sc-leading-normal);
+}
+
+/* Riga azioni: allineata a destra, gli icon-button mantengono il loro 44px.
+   Un filo di separazione superiore stacca le azioni dal contenuto. */
+.cru-card__azioni {
+  justify-content: flex-end;
+  gap: var(--sc-space-1);
+  padding-top: var(--sc-space-2);
+  border-top: var(--sc-border-width) solid var(--sc-color-border);
+}
+
+/* L'azione distruttiva (elimina) vira al rosso in hover/focus per segnalare il
+   peso del gesto, senza urlare a riposo. */
+.cru-azione-elimina:hover,
+.cru-azione-elimina:focus-visible {
+  color: var(--sc-danger-700);
+  background: var(--sc-danger-100);
+}
+
+/* ----- Corpo anteprima (dentro il modal) -----------------------------------
+   Tipografia di lettura per il riepilogo. Gli heading generati (h4/h5) e i
+   paragrafi ricevono un ritmo verticale leggibile. Il contenuto arriva da
+   riepilogoHtml(), già escapato nel JS. */
+.cru-anteprima__corpo {
+  line-height: var(--sc-leading-relaxed);
+}
+.cru-anteprima__corpo h4 {
+  font-size: var(--sc-text-lg);
+  margin-bottom: var(--sc-space-3);
+}
+.cru-anteprima__corpo h5 {
+  font-size: var(--sc-text-base);
+  font-weight: var(--sc-weight-semibold);
+  margin-top: var(--sc-space-4);
+  margin-bottom: var(--sc-space-1);
+}
+.cru-anteprima__corpo p {
+  margin-bottom: var(--sc-space-2);
+}

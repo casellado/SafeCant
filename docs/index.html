@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="auto" data-text-size="normale">
+<head>
+  <meta charset="UTF-8">
+  <!--
+    viewport-fit=cover: necessario perché le env(safe-area-inset-*) usate in
+    styles.css abbiano effetto su iPhone con notch/dynamic island in standalone.
+    Niente maximum-scale/user-scalable=no: bloccare lo zoom viola WCAG 1.4.4
+    (l'utente DEVE poter ingrandire). La dimensione testo si regola dalle
+    impostazioni, ma il pinch-to-zoom resta sempre disponibile.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <!--
+    theme-color allineato a --sc-brand-800 (#0a1a8c) e al manifest: colora la
+    status bar su Android e la UI del browser in standalone. Due varianti per
+    chiaro/scuro così la barra resta coerente col tema attivo.
+  -->
+  <meta name="theme-color" content="#0a1a8c" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0e17" media="(prefers-color-scheme: dark)">
+
+  <meta name="description" content="Compilazione verbali di sopralluogo in cantiere">
+
+  <!-- iOS: abilita la modalità standalone "a tutto schermo" quando installata in Home. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="SafeCant">
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <title>SafeCant — Verbali di Sopralluogo</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="shared/icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="shared/icons/icon-192.png">
+
+  <!-- Design system condiviso: deve precedere Tailwind così le utility CDN
+       possono, dove serve, sovrascrivere senza lottare con la specificità. -->
+  <link rel="stylesheet" href="shared/styles.css">
+
+  <!-- CSS specifici dei moduli: caricati dopo il design system così i token
+       --sc-* sono già definiti quando le regole dei moduli li consumano. -->
+  <link rel="stylesheet" href="moduli/cruscotto/cruscotto.css">
+  <link rel="stylesheet" href="moduli/editor-verbale/editor.css">
+  <link rel="stylesheet" href="moduli/anagrafica/anagrafica.css">
+  <link rel="stylesheet" href="moduli/impostazioni/impostazioni.css">
+
+  <!--
+    Alpine caricato come modulo ESM locale (shared/alpine.esm.js): nessuna
+    dipendenza da CDN esterni, disponibile offline dal primo avvio.
+    alpine-init.js importa Alpine, registra store e componenti, chiama Alpine.start()
+    nell'ordine vincolante — vedi shared/alpine-init.js per i dettagli.
+    type="module" garantisce scope isolato e import/export ESM nativi.
+  -->
+  <script type="module" src="shared/alpine-init.js"></script>
+</head>
+
+<!--
+  x-data sul body: espone lo stato di shell (rotta corrente, apertura overlay
+  globali) a tutta l'app via il componente "appShell" registrato in alpine-init.js.
+  x-cloak nasconde gli elementi Alpine finché il framework non è pronto, evitando
+  che il markup grezzo lampeggi prima dell'idratazione.
+-->
+<body x-data="appShell" x-cloak>
+
+  <!-- =================================================================== -->
+  <!-- === SKIP LINK ===================================================== -->
+  <!-- Primo elemento focalizzabile: consente a chi usa tastiera/screen     -->
+  <!-- reader di saltare l'header e andare dritto al contenuto (WCAG 2.4.1). -->
+  <!-- =================================================================== -->
+  <a class="sc-btn sc-btn--primary sc-skip-link" href="#sc-contenuto">
+    Salta al contenuto
+  </a>
+
+  <!-- =================================================================== -->
+  <!-- === APP SHELL ===================================================== -->
+  <!-- =================================================================== -->
+  <div class="sc-app">
+
+    <!-- === HEADER / APPBAR ============================================= -->
+    <!-- L'header è un landmark <header> con role implicito banner.         -->
+    <header class="sc-appbar">
+      <!--
+        Logo/titolo. In cruscotto è puramente testo; quando si è dentro una
+        sotto-vista (editor, anagrafica, impostazioni) mostriamo un bottone
+        "indietro" che riporta al cruscotto, gestito da appShell.tornaIndietro().
+        Il bottone esiste solo fuori dal cruscotto (x-show) per non confondere.
+      -->
+      <button
+        type="button"
+        class="sc-iconbtn"
+        x-show="rottaCorrente !== 'cruscotto'"
+        @click="tornaIndietro()"
+        aria-label="Torna indietro"
+      >
+        <!-- Freccia indietro. aria-hidden: l'etichetta è sul bottone. -->
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <div class="sc-appbar__titles">
+        <!--
+          h1 unico della pagina: il nome del prodotto resta stabile come
+          intestazione principale. Il titolo della vista corrente è una h2 dentro
+          il <main>, per una gerarchia di heading corretta per gli screen reader.
+        -->
+        <h1 class="sc-appbar__title">SafeCant</h1>
+        <!--
+          Sottotitolo dinamico: cantiere corrente (cruscotto) o titolo vista.
+          aria-live polite così il cambio di contesto viene annunciato senza
+          essere invadente.
+        -->
+        <span
+          class="sc-appbar__subtitle"
+          x-text="sottotitolo"
+          aria-live="polite"
+        >—</span>
+      </div>
+
+      <!--
+        Ingranaggio impostazioni: sempre presente tranne quando si è GIÀ nelle
+        impostazioni. Apre la vista impostazioni via router.
+      -->
+      <button
+        type="button"
+        class="sc-iconbtn"
+        x-show="rottaCorrente !== 'impostazioni'"
+        @click="vaiA('impostazioni')"
+        aria-label="Apri impostazioni utente"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="2"/>
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- === MAIN / ROUTER VIEW ========================================= -->
+    <!--
+      Unico landmark <main> con id bersaglio dello skip-link e tabindex=-1 così
+      che, al cambio vista, possiamo spostare il focus qui e far annunciare la
+      nuova schermata agli screen reader (gestito da appShell.vaiA()).
+      Un solo modulo è visibile alla volta; gli altri rimossi dal flusso da x-show.
+    -->
+    <main id="sc-contenuto" class="sc-main" tabindex="-1">
+
+      <!-- VISTA: CRUSCOTTO ------------------------------------------------
+           data-route marca la vista per il router; x-show la mostra/nasconde. -->
+      <section
+        data-route="cruscotto"
+        x-show="rottaCorrente === 'cruscotto'"
+        aria-label="Cruscotto verbali"
+      >
+<!-- ── moduli/cruscotto/cruscotto.html ─────────────────────────────────── -->
+<div x-data="cruscotto" class="sc-stack sc-stack--loose">
+
+  <!-- =================================================================== -->
+  <!-- === BARRA STATO + AZIONE PRIMARIA ================================ -->
+  <!-- =================================================================== -->
+  <section class="sc-stack" aria-label="Stato e nuova azione">
+    <!-- Stato connessione + coda invio. role=status + aria-live: i cambiamenti
+         (online/offline, conteggio coda) vengono annunciati senza interrompere. -->
+    <div class="sc-row sc-row--between cru-statusbar" role="status" aria-live="polite">
+      <span
+        class="sc-status"
+        :class="{
+          'sc-status--online': $store.app.statoRete === 'online',
+          'sc-status--offline': $store.app.statoRete === 'offline',
+          'sc-status--limitato': $store.app.statoRete === 'limitato'
+        }"
+      >
+        <span class="sc-status__dot" aria-hidden="true"></span>
+        <span x-text="etichettaRete($store.app.statoRete)"></span>
+      </span>
+
+      <!-- Contatore coda + azione invio. Il bottone "Invia ora" fornisce la
+           transient activation richiesta da Web Share: l'invio parte dal tap. -->
+      <span class="cru-coda" x-show="$store.app.inCoda > 0" x-cloak>
+        <span x-text="$store.app.inCoda"></span>
+        <span>in coda</span>
+        <button type="button" class="sc-btn sc-btn--secondary cru-coda__invia"
+                @click="inviaPrimoInCoda()"
+                :disabled="codaInvioInCorso" :aria-disabled="codaInvioInCorso ? 'true' : 'false'"
+                aria-label="Invia ora il primo verbale in coda">
+          <span x-show="!codaInvioInCorso">Invia ora</span>
+          <span x-show="codaInvioInCorso" x-cloak>Invio…</span>
+        </button>
+      </span>
+    </div>
+
+    <!-- Avviso aggiornamento app: compare quando il SW segnala una nuova versione.
+         Tocca la funzione globale esposta da index.html per applicare + ricaricare. -->
+    <div class="sc-card cru-aggiornamento" x-show="$store.app.aggiornamentoDisponibile" x-cloak role="status">
+      <div class="sc-row sc-row--between sc-row--wrap">
+        <span>È disponibile una nuova versione di SafeCant.</span>
+        <button type="button" class="sc-btn sc-btn--secondary" @click="window.scApplicaAggiornamento && window.scApplicaAggiornamento()">
+          Ricarica
+        </button>
+      </div>
+    </div>
+
+    <!-- Azione primaria prominente. -->
+    <button
+      type="button"
+      class="sc-btn sc-btn--primary sc-btn--block"
+      @click="nuovoSopralluogo()"
+      aria-label="Crea nuovo verbale di sopralluogo"
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      Nuovo sopralluogo
+    </button>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === LISTA VERBALI ================================================ -->
+  <!-- =================================================================== -->
+
+  <!-- Caricamento iniziale: messaggio neutro (la lista compare appena pronta). -->
+  <p class="sc-text-muted sc-text-center" x-show="caricamento" x-cloak>Caricamento…</p>
+
+  <!-- Stato vuoto cordiale (progettazione 5.1). -->
+  <div class="sc-empty" x-show="vuoto" x-cloak>
+    <p class="sc-empty__title">Nessun verbale ancora</p>
+    <p>Crea il primo con il pulsante "Nuovo sopralluogo".</p>
+  </div>
+
+  <!-- Elenco. role=list esplicito perché alcune reset CSS rimuovono la semantica
+       di <ul>. Ogni verbale è un <article> con intestazione e azioni. -->
+  <ul role="list" class="sc-stack cru-lista" x-show="!vuoto && !caricamento" x-cloak>
+    <template x-for="v in verbali" :key="v.id">
+      <li>
+        <article class="sc-card cru-card" :aria-label="`Verbale del ${dataCard(v)}`">
+          <!-- Riga superiore: data + badge di stato e NC -->
+          <div class="sc-row sc-row--between sc-row--wrap cru-card__top">
+            <span class="cru-card__data" x-text="dataCard(v)"></span>
+            <span class="sc-row cru-card__badges">
+              <span class="sc-badge" :class="classeBadge(v.stato)" x-text="etichettaStato(v.stato)"></span>
+              <span class="sc-badge sc-badge--nc" x-show="haNc(v)" x-cloak aria-label="Contiene non conformità">
+                <span aria-hidden="true">⚠</span> NC
+              </span>
+            </span>
+          </div>
+
+          <!-- Oggetto del verbale -->
+          <p class="cru-card__oggetto" x-text="oggettoCard(v)"></p>
+
+          <!-- Azioni: modifica (solo bozza), anteprima (sempre), elimina (solo bozza).
+               aria-label include la data per un annuncio non ambiguo. -->
+          <div class="sc-row cru-card__azioni">
+            <button
+              type="button"
+              class="sc-iconbtn"
+              x-show="eBozza(v)"
+              @click="modifica(v)"
+              :aria-label="`Modifica verbale del ${dataCard(v)}`"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              class="sc-iconbtn"
+              @click="apriAnteprima(v)"
+              :aria-label="`Anteprima verbale del ${dataCard(v)}`"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" stroke-width="2"/>
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              class="sc-iconbtn cru-azione-elimina"
+              x-show="eBozza(v)"
+              @click="chiediElimina(v)"
+              :aria-label="`Elimina verbale del ${dataCard(v)}`"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        </article>
+      </li>
+    </template>
+  </ul>
+
+  <!-- =================================================================== -->
+  <!-- === MODAL: ANTEPRIMA ============================================= -->
+  <!-- =================================================================== -->
+  <template x-if="verbaleAnteprima">
+    <div class="sc-overlay" @click.self="chiudiAnteprima()">
+      <div
+        class="sc-sheet"
+        x-ref="modalAnteprima"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cru-anteprima-titolo"
+        tabindex="-1"
+      >
+        <div class="sc-sheet__header">
+          <h3 id="cru-anteprima-titolo" class="sc-card__title">Anteprima verbale</h3>
+          <button type="button" class="sc-iconbtn" @click="chiudiAnteprima()" aria-label="Chiudi anteprima">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Contenuto generato in modo SICURO da riepilogoHtml (tutti i valori
+             utente escapati nel JS). x-html è accettabile qui perché la stringa
+             è costruita da noi con escapeHtml, non da input grezzo. -->
+        <div class="cru-anteprima__corpo" x-html="riepilogoHtml(verbaleAnteprima)"></div>
+      </div>
+    </div>
+  </template>
+
+  <!-- =================================================================== -->
+  <!-- === MODAL: CONFERMA ELIMINA ====================================== -->
+  <!-- =================================================================== -->
+  <template x-if="verbaleDaEliminare">
+    <div class="sc-overlay" @click.self="annullaElimina()">
+      <div
+        class="sc-sheet"
+        x-ref="modalElimina"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="cru-elimina-titolo"
+        aria-describedby="cru-elimina-desc"
+        tabindex="-1"
+        @keydown.escape="annullaElimina()"
+      >
+        <div class="sc-stack">
+          <h3 id="cru-elimina-titolo" class="sc-card__title">Eliminare il verbale?</h3>
+          <p id="cru-elimina-desc">
+            Stai per eliminare la bozza del verbale del
+            <strong x-text="dataCard(verbaleDaEliminare)"></strong>.
+            L'operazione non può essere annullata.
+          </p>
+          <div class="sc-row sc-row--between">
+            <button type="button" class="sc-btn sc-btn--secondary" @click="annullaElimina()">
+              Annulla
+            </button>
+            <button type="button" class="sc-btn sc-btn--danger" @click="confermaElimina()">
+              Elimina
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+</div>
+<!-- ── /moduli/cruscotto/cruscotto.html ────────────────────────────────── -->
+      </section>
+
+      <!-- VISTA: EDITOR VERBALE ------------------------------------------ -->
+      <section
+        data-route="editor"
+        x-show="rottaCorrente === 'editor'"
+        aria-label="Editor verbale di sopralluogo"
+      >
+<!-- ── moduli/editor-verbale/editor.html ───────────────────────────────── -->
+<div x-data="editorVerbale">
+  <!-- Guardia: se per qualche motivo non c'è verbale, non rompere il render. -->
+  <template x-if="v">
+    <div class="ed-shell">
+
+      <!-- =============================================================== -->
+      <!-- === STEPPER =================================================== -->
+      <!-- =============================================================== -->
+      <nav class="ed-stepper" aria-label="Progresso compilazione verbale">
+        <ol class="ed-stepper__list">
+          <template x-for="s in [STEP.DATI, STEP.PRESENTI, STEP.NC, STEP.FIRME]" :key="s">
+            <li class="ed-stepper__item">
+              <button
+                type="button"
+                class="ed-stepper__btn"
+                :class="{
+                  'is-corrente': stepCorrente === s,
+                  'is-completo': completo(s) && stepCorrente !== s
+                }"
+                :aria-current="stepCorrente === s ? 'step' : null"
+                :aria-disabled="!accessibile(s) ? 'true' : 'false'"
+                :disabled="!accessibile(s)"
+                @click="vaiStep(s)"
+              >
+                <span class="ed-stepper__num" aria-hidden="true">
+                  <span x-show="!(completo(s) && stepCorrente !== s)" x-text="s"></span>
+                  <span x-show="completo(s) && stepCorrente !== s" x-cloak>✓</span>
+                </span>
+                <span class="ed-stepper__label" x-text="_titoloStep(s)"></span>
+              </button>
+            </li>
+          </template>
+        </ol>
+        <p class="ed-stepper__posizione" aria-live="polite">
+          Passo <span x-text="stepCorrente"></span> di <span x-text="NUM_STEP"></span>
+        </p>
+      </nav>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 1 — DATI GENERALI ==================================== -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.DATI" aria-label="Dati generali">
+        <h3>Dati generali</h3>
+
+        <div class="sc-field">
+          <label class="sc-label" for="ed-data">Data sopralluogo <span class="sc-label__required" aria-hidden="true">*</span></label>
+          <input id="ed-data" class="sc-input" type="date" x-model="v.data_sopralluogo" @input="onCampoModificato()" aria-required="true">
+        </div>
+
+        <div class="sc-field">
+          <label class="sc-label" for="ed-oggetto">Oggetto <span class="sc-label__required" aria-hidden="true">*</span></label>
+          <input id="ed-oggetto" class="sc-input" type="text" x-model="v.oggetto" @input="onCampoModificato()"
+                 placeholder="Es. Sopralluogo coordinamento e controllo" aria-required="true">
+        </div>
+
+        <!-- Condizioni meteo: radiogroup (progettazione 6.2). -->
+        <div class="sc-field">
+          <span class="sc-label" id="ed-meteo-label">Condizioni meteo <span class="sc-label__required" aria-hidden="true">*</span></span>
+          <div class="sc-segmented" role="radiogroup" x-radiogroup aria-labelledby="ed-meteo-label">
+            <template x-for="m in [
+              {v:'soleggiato', l:'☀️ Soleggiato'},
+              {v:'nuvoloso', l:'☁️ Nuvoloso'},
+              {v:'pioggia', l:'🌧 Pioggia'},
+              {v:'neve', l:'❄️ Neve'},
+              {v:'vento', l:'💨 Vento'}
+            ]" :key="m.v">
+              <button type="button" class="sc-segmented__option" role="radio"
+                      :aria-checked="v.condizioni_meteo === m.v ? 'true' : 'false'"
+                      :tabindex="v.condizioni_meteo === m.v ? '0' : '-1'"
+                      @click="impostaMeteo(m.v)" x-text="m.l"></button>
+            </template>
+          </div>
+        </div>
+
+        <!-- Progressive (opzionali) -->
+        <div class="ed-due-colonne">
+          <div class="sc-field">
+            <label class="sc-label" for="ed-prog-da">Progressiva inizio</label>
+            <input id="ed-prog-da" class="sc-input" type="text" x-model="v.progressiva_inizio" @input="onCampoModificato()" placeholder="Es. km 42+150">
+          </div>
+          <div class="sc-field">
+            <label class="sc-label" for="ed-prog-a">Progressiva fine</label>
+            <input id="ed-prog-a" class="sc-input" type="text" x-model="v.progressiva_fine" @input="onCampoModificato()" placeholder="Es. km 42+850">
+          </div>
+        </div>
+
+        <div class="sc-field">
+          <label class="sc-label" for="ed-luoghi">Stato dei luoghi <span class="sc-label__required" aria-hidden="true">*</span></label>
+          <textarea id="ed-luoghi" class="sc-textarea" x-model="v.stato_luoghi" @input="onCampoModificato()" rows="4" aria-required="true"
+                    placeholder="Descrivi lo stato dei luoghi…"></textarea>
+        </div>
+
+        <div class="sc-field">
+          <label class="sc-label" for="ed-prescrizioni">Prescrizioni impartite <span class="sc-label__required" aria-hidden="true">*</span></label>
+          <textarea id="ed-prescrizioni" class="sc-textarea" x-model="v.note_prescrizioni" @input="onCampoModificato()" rows="4" aria-required="true"
+                    placeholder="Indica le prescrizioni impartite…"></textarea>
+        </div>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 2 — PRESENTI ========================================= -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.PRESENTI" aria-label="Presenti">
+        <div class="sc-row sc-row--between">
+          <h3>Presenti al sopralluogo</h3>
+          <span class="ana-conteggio" x-text="v.presenti.length" aria-hidden="true"></span>
+        </div>
+
+        <p class="sc-empty" x-show="v.presenti.length === 0" x-cloak>
+          Nessun presente. Aggiungi le persone presenti al sopralluogo.
+        </p>
+
+        <ul role="list" class="sc-stack ed-presenti">
+          <template x-for="p in v.presenti" :key="p.id_locale">
+            <li class="sc-card ed-presente">
+              <div class="ed-presente__info">
+                <span class="ed-presente__nome" x-text="p.nome_cognome"></span>
+                <span class="ed-presente__meta">
+                  <span x-text="p.qualifica"></span>
+                  <template x-if="p.impresa"><span> · <span x-text="p.impresa"></span></span></template>
+                </span>
+                <!-- Stato firma -->
+                <span class="ed-presente__firma" x-show="statoFirmaPresente(p) === 'firmato'" x-cloak>
+                  ✍️ Firmato
+                </span>
+                <span class="ed-presente__firma is-rifiuto" x-show="statoFirmaPresente(p) === 'rifiutato'" x-cloak>
+                  ⚠️ Firma rifiutata<template x-if="p.motivo_rifiuto"><span> — <span x-text="p.motivo_rifiuto"></span></span></template>
+                </span>
+                <span class="ed-presente__firma is-attesa" x-show="statoFirmaPresente(p) === 'da_firmare'" x-cloak>
+                  ⏳ Da firmare
+                </span>
+              </div>
+              <div class="sc-row ed-presente__azioni">
+                <button type="button" class="sc-btn sc-btn--secondary" @click="apriFirma({tipo:'presente', presenteId:p.id_locale})"
+                        :aria-label="`Firma per ${p.nome_cognome}`">Firma</button>
+                <button type="button" class="sc-btn sc-btn--ghost" @click="apriRifiuto(p.id_locale)"
+                        :aria-label="`Registra rifiuto firma per ${p.nome_cognome}`">Rifiuto</button>
+                <button type="button" class="sc-iconbtn" @click="rimuoviPresente(p.id_locale)"
+                        :aria-label="`Rimuovi ${p.nome_cognome}`">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            </li>
+          </template>
+        </ul>
+
+        <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="apriSheetPresente()">
+          + Aggiungi presente
+        </button>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 3 — NON CONFORMITÀ =================================== -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.NC" aria-label="Non conformità">
+        <div class="sc-row sc-row--between">
+          <h3>Non conformità</h3>
+          <span class="ana-conteggio" x-text="v.nc_drafts.length" aria-hidden="true"></span>
+        </div>
+        <p class="sc-field__hint sc-mt-0">Le non conformità sono facoltative. Aggiungile se ne hai rilevate.</p>
+
+        <ul role="list" class="sc-stack ed-nc-lista">
+          <template x-for="(nc, idx) in v.nc_drafts" :key="nc.id_locale">
+            <li class="sc-card sc-stack">
+              <div class="sc-row sc-row--between">
+                <h4 x-text="`NC ${idx + 1}`"></h4>
+                <button type="button" class="sc-iconbtn" @click="rimuoviNc(nc.id_locale)" :aria-label="`Rimuovi NC ${idx + 1}`">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Livello: radiogroup con colore per gravità -->
+              <div class="sc-field">
+                <span class="sc-label" :id="`ed-nc-liv-${nc.id_locale}`">Livello</span>
+                <div class="sc-segmented" role="radiogroup" x-radiogroup :aria-labelledby="`ed-nc-liv-${nc.id_locale}`">
+                  <template x-for="liv in LIVELLI_NC" :key="liv">
+                    <button type="button" class="sc-segmented__option ed-nc-livello" :class="`is-${liv}`" role="radio"
+                            :aria-checked="nc.livello === liv ? 'true' : 'false'"
+                            :tabindex="nc.livello === liv ? '0' : '-1'"
+                            @click="impostaLivelloNc(nc.id_locale, liv)"
+                            x-text="liv.charAt(0).toUpperCase() + liv.slice(1)"></button>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Impresa (opzionale) -->
+              <div class="sc-field">
+                <label class="sc-label" :for="`ed-nc-imp-${nc.id_locale}`">Impresa</label>
+                <select :id="`ed-nc-imp-${nc.id_locale}`" class="sc-select" x-model="nc.impresa_id" @change="onCampoModificato()">
+                  <option value="">Nessuna impresa</option>
+                  <template x-for="imp in impreseAnagrafica" :key="imp.id">
+                    <option :value="imp.id" x-text="imp.ragione_sociale"></option>
+                  </template>
+                </select>
+              </div>
+
+              <!-- Descrizione -->
+              <div class="sc-field">
+                <label class="sc-label" :for="`ed-nc-desc-${nc.id_locale}`">Descrizione</label>
+                <textarea :id="`ed-nc-desc-${nc.id_locale}`" class="sc-textarea" x-model="nc.descrizione" @input="onCampoModificato()" rows="3"
+                          placeholder="Descrivi la non conformità…"></textarea>
+                <p class="sc-field__hint">
+                  <span x-text="lunghezzaDescrizione(nc)"></span> caratteri (min 20 consigliati)
+                </p>
+              </div>
+
+              <!-- Scadenza calcolata -->
+              <p class="ed-nc-scadenza" aria-live="polite">
+                <strong>Scadenza:</strong> <span x-text="scadenzaNcLeggibile(nc)"></span>
+              </p>
+            </li>
+          </template>
+        </ul>
+
+        <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="aggiungiNc()">
+          + Aggiungi non conformità
+        </button>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 4 — FIRME E FINALIZZAZIONE =========================== -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.FIRME" aria-label="Firme e finalizzazione">
+        <h3>Firme e finalizzazione</h3>
+
+        <!-- Riepilogo firme presenti -->
+        <section class="sc-card sc-stack" aria-labelledby="ed-firme-pres-titolo">
+          <h4 id="ed-firme-pres-titolo">Firme dei presenti</h4>
+          <ul role="list" class="sc-stack sc-stack--tight">
+            <template x-for="p in v.presenti" :key="p.id_locale">
+              <li class="sc-row sc-row--between ed-firma-riga">
+                <span x-text="p.nome_cognome"></span>
+                <span>
+                  <span x-show="statoFirmaPresente(p) === 'firmato'" x-cloak>✍️ Firmato</span>
+                  <span x-show="statoFirmaPresente(p) === 'rifiutato'" x-cloak>⚠️ Rifiutata</span>
+                  <button type="button" class="sc-btn sc-btn--secondary" x-show="statoFirmaPresente(p) === 'da_firmare'" x-cloak
+                          @click="apriFirma({tipo:'presente', presenteId:p.id_locale})"
+                          :aria-label="`Firma per ${p.nome_cognome}`">Firma ora</button>
+                </span>
+              </li>
+            </template>
+            <li x-show="v.presenti.length === 0" x-cloak class="sc-text-muted">Nessun presente aggiunto.</li>
+          </ul>
+        </section>
+
+        <!-- Firma redattore -->
+        <section class="sc-card sc-stack" aria-labelledby="ed-firma-red-titolo">
+          <h4 id="ed-firma-red-titolo">Firma del redattore</h4>
+          <p class="sc-field__hint sc-mt-0" x-text="`${v.redattore.nome_cognome || ''}${v.redattore.qualifica ? ' — ' + v.redattore.qualifica : ''}`"></p>
+
+          <!-- Anteprima firma redattore se presente -->
+          <template x-if="v.redattore.firma_png_base64">
+            <div class="ed-firma-red-anteprima">
+              <img :src="v.redattore.firma_png_base64" alt="Firma del redattore" class="ed-firma-red-anteprima__img">
+            </div>
+          </template>
+
+          <div class="sc-row sc-row--wrap">
+            <button type="button" class="sc-btn sc-btn--secondary" @click="usaFirmaPermanente()">Usa firma permanente</button>
+            <button type="button" class="sc-btn sc-btn--secondary" @click="apriFirma({tipo:'redattore'})">Firma ora</button>
+            <button type="button" class="sc-btn sc-btn--ghost" x-show="v.redattore.firma_png_base64" x-cloak @click="rimuoviFirmaRedattore()">Rimuovi</button>
+          </div>
+        </section>
+
+        <!-- Riepilogo -->
+        <section class="sc-card sc-stack sc-stack--tight" aria-labelledby="ed-riepilogo-titolo">
+          <h4 id="ed-riepilogo-titolo">Riepilogo</h4>
+          <div class="sc-row sc-row--between"><span class="sc-text-muted">Data</span><span x-text="riepilogo.data"></span></div>
+          <div class="sc-row sc-row--between"><span class="sc-text-muted">Cantiere</span><span x-text="riepilogo.cantiere || '—'"></span></div>
+          <div class="sc-row sc-row--between"><span class="sc-text-muted">Presenti</span>
+            <span><span x-text="riepilogo.nPresenti"></span> (<span x-text="riepilogo.nFirme"></span> firme, <span x-text="riepilogo.nRifiuti"></span> rifiuti)</span>
+          </div>
+          <div class="sc-row sc-row--between"><span class="sc-text-muted">Non conformità</span><span x-text="riepilogo.nNc"></span></div>
+        </section>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === ACTION BAR (sticky) ======================================= -->
+      <!-- Vive nell'editor per accedere allo stato; sticky in fondo via CSS. -->
+      <!-- =============================================================== -->
+      <div class="ed-actionbar">
+        <button type="button" class="sc-btn sc-btn--secondary" @click="indietro()"
+                x-show="stepCorrente > STEP.DATI" x-cloak>Indietro</button>
+        <span class="ed-actionbar__spacer"></span>
+        <button type="button" class="sc-btn sc-btn--primary" @click="avanti()"
+                x-show="stepCorrente < NUM_STEP"
+                :disabled="!completo(stepCorrente)" :aria-disabled="!completo(stepCorrente) ? 'true' : 'false'">Avanti</button>
+        <button type="button" class="sc-btn sc-btn--primary" @click="apriFinalizza()"
+                x-show="stepCorrente === NUM_STEP" x-cloak>Finalizza e invia</button>
+      </div>
+
+      <!-- =============================================================== -->
+      <!-- === MODAL: AGGIUNGI PRESENTE ================================== -->
+      <!-- =============================================================== -->
+      <template x-if="sheetPresenteAperto">
+        <div class="sc-overlay" @click.self="chiudiSheetPresente()">
+          <div class="sc-sheet" x-ref="sheetPresente" role="dialog" aria-modal="true" aria-labelledby="ed-sheet-titolo" tabindex="-1">
+            <div class="sc-sheet__header">
+              <h3 id="ed-sheet-titolo" class="sc-card__title">Aggiungi presente</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiSheetPresente()" aria-label="Chiudi">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+
+            <!-- Toggle modo (solo se c'è anagrafica) -->
+            <div class="sc-segmented" role="radiogroup" x-radiogroup aria-label="Modalità inserimento" x-show="anagrafica" x-cloak>
+              <button type="button" class="sc-segmented__option" role="radio" :aria-checked="modoInserimento==='anagrafica'?'true':'false'"
+                      :tabindex="modoInserimento==='anagrafica'?'0':'-1'" @click="modoInserimento='anagrafica'">Da anagrafica</button>
+              <button type="button" class="sc-segmented__option" role="radio" :aria-checked="modoInserimento==='manuale'?'true':'false'"
+                      :tabindex="modoInserimento==='manuale'?'0':'-1'" @click="modoInserimento='manuale'">Manuale</button>
+            </div>
+
+            <!-- DA ANAGRAFICA -->
+            <div class="sc-stack" x-show="modoInserimento === 'anagrafica'" x-cloak>
+              <div class="sc-field">
+                <label class="sc-label" for="ed-ricerca-pres">Cerca persona</label>
+                <input id="ed-ricerca-pres" class="sc-input" type="search" x-model="ricercaPresente" placeholder="Nome, qualifica, ente…">
+              </div>
+              <ul role="list" class="sc-stack sc-stack--tight ed-ricerca-risultati" aria-live="polite">
+                <template x-for="persona in personeAnagrafica" :key="persona.id">
+                  <li>
+                    <button type="button" class="sc-card ed-persona-opzione" @click="aggiungiDaAnagrafica(persona)">
+                      <span class="ed-presente__nome" x-text="persona.nome_cognome"></span>
+                      <span class="ed-presente__meta">
+                        <span x-text="persona.qualifica"></span>
+                        <template x-if="nomeImpresa(persona.impresa_id)"><span> · <span x-text="nomeImpresa(persona.impresa_id)"></span></span></template>
+                        <template x-if="persona.ente"><span> · <span x-text="persona.ente"></span></span></template>
+                      </span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="personeAnagrafica.length === 0" x-cloak class="sc-text-muted sc-text-center">Nessun risultato</li>
+              </ul>
+            </div>
+
+            <!-- MANUALE -->
+            <div class="sc-stack" x-show="modoInserimento === 'manuale'" x-cloak>
+              <div class="sc-field">
+                <label class="sc-label" for="ed-man-nome">Nome e cognome <span class="sc-label__required" aria-hidden="true">*</span></label>
+                <input id="ed-man-nome" class="sc-input" type="text" x-model="manuale.nome_cognome" aria-required="true">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label" for="ed-man-qual">Qualifica</label>
+                <input id="ed-man-qual" class="sc-input" type="text" x-model="manuale.qualifica">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label" for="ed-man-imp">Impresa</label>
+                <input id="ed-man-imp" class="sc-input" type="text" x-model="manuale.impresa">
+              </div>
+              <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="aggiungiManuale()"
+                      :disabled="!manuale.nome_cognome.trim()" :aria-disabled="!manuale.nome_cognome.trim() ? 'true':'false'">Aggiungi</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- =============================================================== -->
+      <!-- === MODAL: RIFIUTO FIRMA ====================================== -->
+      <!-- =============================================================== -->
+      <template x-if="modalRifiutoAperto">
+        <div class="sc-overlay" @click.self="chiudiRifiuto()">
+          <div class="sc-sheet" x-ref="modalRifiuto" role="dialog" aria-modal="true" aria-labelledby="ed-rifiuto-titolo" tabindex="-1">
+            <div class="sc-sheet__header">
+              <h3 id="ed-rifiuto-titolo" class="sc-card__title">Rifiuto della firma</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiRifiuto()" aria-label="Chiudi">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="sc-field">
+              <label class="sc-label" for="ed-rifiuto-motivo">Motivo del rifiuto <span class="sc-label__required" aria-hidden="true">*</span></label>
+              <textarea id="ed-rifiuto-motivo" class="sc-textarea" x-model="rifiutoMotivo" rows="3" aria-required="true"
+                        placeholder="Indica il motivo del rifiuto…"></textarea>
+            </div>
+            <div class="sc-row sc-row--between">
+              <button type="button" class="sc-btn sc-btn--secondary" @click="chiudiRifiuto()">Annulla</button>
+              <button type="button" class="sc-btn sc-btn--primary" @click="confermaRifiuto()"
+                      :disabled="!rifiutoMotivo.trim()" :aria-disabled="!rifiutoMotivo.trim()?'true':'false'">Conferma rifiuto</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- =============================================================== -->
+      <!-- === MODAL: CANVAS FIRMA ======================================= -->
+      <!-- =============================================================== -->
+      <template x-if="modalFirmaAperto">
+        <div class="sc-overlay" @click.self="chiudiFirma()">
+          <div class="sc-sheet" x-ref="modalFirma" role="dialog" aria-modal="true" aria-labelledby="ed-firma-titolo" tabindex="-1">
+            <div class="sc-sheet__header">
+              <h3 id="ed-firma-titolo" class="sc-card__title">Firma</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiFirma()" aria-label="Chiudi senza salvare">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="ed-firma-box">
+              <canvas x-ref="canvasFirma" class="ed-firma-canvas" role="img" aria-label="Area di firma. Disegna con il dito o con un pennino."></canvas>
+            </div>
+            <p class="sc-field__hint ed-firma-istruzione">Firma con il dito o con un pennino.</p>
+            <div class="sc-row sc-row--between ed-firma-azioni">
+              <button type="button" class="sc-btn sc-btn--secondary" @click="pulisciFirma()">Cancella</button>
+              <button type="button" class="sc-btn sc-btn--primary" @click="confermaFirma()"
+                      :disabled="firmaCanvasVuoto" :aria-disabled="firmaCanvasVuoto?'true':'false'">Conferma</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- =============================================================== -->
+      <!-- === MODAL: FINALIZZAZIONE ===================================== -->
+      <!-- =============================================================== -->
+      <template x-if="modalFinalizzaAperto">
+        <div class="sc-overlay" @click.self="chiudiFinalizza()">
+          <div class="sc-sheet" x-ref="modalFinalizza" role="alertdialog" aria-modal="true"
+               aria-labelledby="ed-finalizza-titolo" tabindex="-1"
+               @keydown.escape="chiudiFinalizza()">
+            <div class="sc-sheet__header">
+              <h3 id="ed-finalizza-titolo" class="sc-card__title">Finalizza e invia</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiFinalizza()" aria-label="Chiudi">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+
+            <!-- Caso: mancanze -> elenco con link allo step -->
+            <template x-if="mancanze.length > 0">
+              <div class="sc-stack">
+                <p id="ed-finalizza-desc-mancanze">Non puoi ancora finalizzare. Mancano:</p>
+                <ul role="list" class="sc-stack sc-stack--tight">
+                  <template x-for="(m, i) in mancanze" :key="i">
+                    <li>
+                      <button type="button" class="sc-btn sc-btn--ghost ed-mancanza" @click="vaiAMancanza(m.step)">
+                        <span x-text="m.messaggio"></span>
+                      </button>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </template>
+
+            <!-- Caso: tutto ok -> conferma invio -->
+            <template x-if="mancanze.length === 0">
+              <div class="sc-stack">
+                <p id="ed-finalizza-desc-ok">
+                  Stai per finalizzare il verbale. Dopo l'invio non potrai più modificarlo.
+                  Il file verrà condiviso verso l'app per il caricamento sul cloud condiviso.
+                </p>
+                <div class="sc-row sc-row--between">
+                  <button type="button" class="sc-btn sc-btn--secondary" @click="chiudiFinalizza()">Annulla</button>
+                  <button type="button" class="sc-btn sc-btn--primary" @click="finalizzaEInvia()"
+                          :disabled="invioInCorso" :aria-disabled="invioInCorso?'true':'false'">
+                    <span x-show="!invioInCorso">Finalizza e invia</span>
+                    <span x-show="invioInCorso" x-cloak>Invio in corso…</span>
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+    </div>
+  </template>
+</div>
+<!-- ── /moduli/editor-verbale/editor.html ──────────────────────────────── -->
+      </section>
+
+      <!-- VISTA: ANAGRAFICA ---------------------------------------------- -->
+      <section
+        data-route="anagrafica"
+        x-show="rottaCorrente === 'anagrafica'"
+        aria-label="Anagrafica cantiere"
+      >
+<!-- ── moduli/anagrafica/anagrafica.html ───────────────────────────────── -->
+<div x-data="anagrafica" class="sc-stack sc-stack--loose">
+
+  <h2>Anagrafica cantiere</h2>
+
+  <!-- =================================================================== -->
+  <!-- === IMPORTAZIONE ================================================= -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack" aria-labelledby="ana-import-titolo">
+    <h3 id="ana-import-titolo" class="sc-card__title">Importa anagrafica</h3>
+
+    <!-- Versione attualmente caricata, se presente. -->
+    <template x-if="!vuota">
+      <p class="sc-field__hint sc-mt-0">
+        Caricata: <strong x-text="etichettaVersione"></strong>
+      </p>
+    </template>
+    <template x-if="vuota">
+      <p class="sc-field__hint sc-mt-0">
+        Nessuna anagrafica caricata. Importa il file che trovi nella cartella
+        condivisa del cantiere.
+      </p>
+    </template>
+
+    <div>
+      <button
+        type="button"
+        class="sc-btn sc-btn--primary"
+        @click="apriFilePicker()"
+        :aria-busy="statoImport === 'in_corso' ? 'true' : 'false'"
+        :disabled="statoImport === 'in_corso'"
+      >
+        <span x-show="statoImport !== 'in_corso'" x-text="vuota ? 'Importa anagrafica' : 'Importa anagrafica aggiornata'"></span>
+        <span x-show="statoImport === 'in_corso'" x-cloak>Importazione in corso…</span>
+      </button>
+
+      <!-- Input file reale: nascosto ma presente nel DOM. accept guida il picker
+           verso i .json; il change è gestito dal componente. -->
+      <input
+        x-ref="fileInput"
+        type="file"
+        accept="application/json,.json"
+        class="sc-visually-hidden"
+        @change="onFileScelto($event)"
+        aria-hidden="true"
+        tabindex="-1"
+      >
+    </div>
+
+    <!-- Errore d'importazione: annunciato (aria-live assertive lo fa già via
+         announce nel JS) e mostrato a video con stile d'errore. -->
+    <template x-if="statoImport === 'errore' && erroreImport">
+      <p class="sc-field__error" role="alert" x-text="erroreImport"></p>
+    </template>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === CONSULTAZIONE (solo se un'anagrafica è caricata) ============= -->
+  <!-- =================================================================== -->
+  <template x-if="!vuota">
+    <div class="sc-stack">
+
+      <!-- Ricerca trasversale a tutte le sezioni. -->
+      <div class="sc-field">
+        <label class="sc-label" for="ana-ricerca">Cerca</label>
+        <input
+          id="ana-ricerca"
+          class="sc-input"
+          type="search"
+          x-model="ricerca"
+          placeholder="Nome, impresa, qualifica…"
+          aria-describedby="ana-ricerca-hint"
+        >
+        <p id="ana-ricerca-hint" class="sc-field__hint">
+          Filtra imprese, lavoratori, mezzi e persone.
+        </p>
+      </div>
+
+      <!-- SEZIONE: IMPRESE ---------------------------------------------- -->
+      <details class="sc-card ana-sezione" open>
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Imprese</span>
+          <span class="ana-conteggio" x-text="numImprese" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numImprese} imprese`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="imp in filtra(corrente.imprese)" :key="imp.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="imp.ragione_sociale"></span>
+              <template x-if="imp.ruolo">
+                <span class="ana-voce__meta" x-text="imp.ruolo"></span>
+              </template>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.imprese).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+      <!-- SEZIONE: LAVORATORI ------------------------------------------- -->
+      <details class="sc-card ana-sezione">
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Lavoratori</span>
+          <span class="ana-conteggio" x-text="numLavoratori" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numLavoratori} lavoratori`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="lav in filtra(corrente.lavoratori)" :key="lav.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="lav.nome_cognome"></span>
+              <span class="ana-voce__meta">
+                <span x-text="lav.qualifica"></span>
+                <template x-if="nomeImpresa(lav.impresa_id)">
+                  <span> · <span x-text="nomeImpresa(lav.impresa_id)"></span></span>
+                </template>
+              </span>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.lavoratori).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+      <!-- SEZIONE: MEZZI E ATTREZZATURE --------------------------------- -->
+      <details class="sc-card ana-sezione">
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Mezzi e attrezzature</span>
+          <span class="ana-conteggio" x-text="numMezzi" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numMezzi} mezzi e attrezzature`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="mez in filtra(corrente.mezzi_attrezzature)" :key="mez.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="mez.tipologia"></span>
+              <span class="ana-voce__meta">
+                <template x-if="mez.marca || mez.modello">
+                  <span x-text="[mez.marca, mez.modello].filter(Boolean).join(' ')"></span>
+                </template>
+                <template x-if="nomeImpresa(mez.impresa_id)">
+                  <span> · <span x-text="nomeImpresa(mez.impresa_id)"></span></span>
+                </template>
+              </span>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.mezzi_attrezzature).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+      <!-- SEZIONE: PERSONE COMMITTENTE ---------------------------------- -->
+      <details class="sc-card ana-sezione">
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Persone committente</span>
+          <span class="ana-conteggio" x-text="numCommittente" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numCommittente} persone del committente`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="pc in filtra(corrente.persone_committente)" :key="pc.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="pc.nome_cognome"></span>
+              <span class="ana-voce__meta" x-text="pc.qualifica"></span>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.persone_committente).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+      <!-- SEZIONE: PERSONE TERZI ---------------------------------------- -->
+      <details class="sc-card ana-sezione">
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Persone terzi</span>
+          <span class="ana-conteggio" x-text="numTerzi" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numTerzi} persone terze`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="pt in filtra(corrente.persone_terzi)" :key="pt.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="pt.nome_cognome"></span>
+              <span class="ana-voce__meta">
+                <span x-text="pt.qualifica"></span>
+                <template x-if="pt.ente">
+                  <span> · <span x-text="pt.ente"></span></span>
+                </template>
+              </span>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.persone_terzi).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+    </div>
+  </template>
+
+  <!-- =================================================================== -->
+  <!-- === STATO VUOTO (nessuna anagrafica) ============================= -->
+  <!-- =================================================================== -->
+  <template x-if="vuota && statoImport !== 'in_corso'">
+    <div class="sc-empty">
+      <p class="sc-empty__title">Nessuna anagrafica</p>
+      <p>Importa il file dell'anagrafica del cantiere per consultare imprese,
+         lavoratori, mezzi e persone durante i sopralluoghi.</p>
+    </div>
+  </template>
+
+</div>
+<!-- ── /moduli/anagrafica/anagrafica.html ──────────────────────────────── -->
+      </section>
+
+      <!-- VISTA: IMPOSTAZIONI -------------------------------------------- -->
+      <section
+        data-route="impostazioni"
+        x-show="rottaCorrente === 'impostazioni'"
+        aria-label="Impostazioni utente"
+      >
+<!-- ── moduli/impostazioni/impostazioni.html ───────────────────────────── -->
+<div x-data="impostazioni" class="sc-stack sc-stack--loose">
+
+  <h2>Impostazioni</h2>
+
+  <!-- =================================================================== -->
+  <!-- === DATI PERSONALI =============================================== -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack" aria-labelledby="imp-dati-titolo">
+    <h3 id="imp-dati-titolo" class="sc-card__title">Dati personali</h3>
+    <p class="sc-field__hint sc-mt-0">
+      Nome e qualifica compaiono come redattore nei verbali che invii.
+    </p>
+
+    <!-- Nome e cognome (obbligatorio) -->
+    <div class="sc-field">
+      <label class="sc-label" for="imp-nome">
+        Nome e cognome
+        <span class="sc-label__required" aria-hidden="true">*</span>
+      </label>
+      <input
+        id="imp-nome"
+        class="sc-input"
+        type="text"
+        autocomplete="name"
+        x-model="nomeCognome"
+        @input="onCampoModificato()"
+        :aria-invalid="errori.nomeCognome ? 'true' : 'false'"
+        aria-required="true"
+        :aria-describedby="errori.nomeCognome ? 'imp-nome-err' : null"
+        placeholder="Es. Mario Rossi"
+      >
+      <p id="imp-nome-err" class="sc-field__error" x-show="errori.nomeCognome" x-cloak>
+        Inserisci nome e cognome.
+      </p>
+    </div>
+
+    <!-- Qualifica (obbligatorio) -->
+    <div class="sc-field">
+      <label class="sc-label" for="imp-qualifica">
+        Qualifica
+        <span class="sc-label__required" aria-hidden="true">*</span>
+      </label>
+      <input
+        id="imp-qualifica"
+        class="sc-input"
+        type="text"
+        x-model="qualifica"
+        @input="onCampoModificato()"
+        :aria-invalid="errori.qualifica ? 'true' : 'false'"
+        aria-required="true"
+        :aria-describedby="errori.qualifica ? 'imp-qualifica-err' : null"
+        placeholder="Es. Tecnico di cantiere"
+      >
+      <p id="imp-qualifica-err" class="sc-field__error" x-show="errori.qualifica" x-cloak>
+        Inserisci la qualifica.
+      </p>
+    </div>
+
+    <!-- Cantiere predefinito (opzionale): mostrato nel sottotitolo del cruscotto. -->
+    <div class="sc-field">
+      <label class="sc-label" for="imp-cantiere">Cantiere predefinito</label>
+      <input
+        id="imp-cantiere"
+        class="sc-input"
+        type="text"
+        inputmode="latin"
+        x-model="cantiereDefault"
+        @input="onCampoModificato()"
+        aria-describedby="imp-cantiere-hint"
+        placeholder="Es. CZ399"
+      >
+      <p id="imp-cantiere-hint" class="sc-field__hint">
+        Codice del cantiere su cui lavori più spesso. Puoi lasciarlo vuoto.
+      </p>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === FIRMA PERMANENTE ============================================= -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack" aria-labelledby="imp-firma-titolo">
+    <h3 id="imp-firma-titolo" class="sc-card__title">Firma permanente</h3>
+    <p class="sc-field__hint sc-mt-0">
+      Imposta la tua firma una volta: verrà proposta come firma del redattore
+      quando finalizzi un verbale, senza doverla ridisegnare ogni volta.
+    </p>
+
+    <div class="sc-card imp-firma-anteprima">
+      <template x-if="firmaPng">
+        <img
+          :src="firmaPng"
+          alt="Anteprima della tua firma permanente"
+          class="imp-firma-anteprima__img"
+        >
+      </template>
+      <template x-if="!firmaPng">
+        <span class="sc-text-muted">Nessuna firma impostata</span>
+      </template>
+    </div>
+
+    <div class="sc-row sc-row--wrap">
+      <button type="button" class="sc-btn sc-btn--primary" @click="apriModalFirma()">
+        <span x-text="firmaPng ? 'Modifica firma' : 'Imposta firma'"></span>
+      </button>
+      <button
+        type="button"
+        class="sc-btn sc-btn--secondary"
+        x-show="firmaPng"
+        @click="rimuoviFirma()"
+      >
+        Rimuovi firma
+      </button>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === PREFERENZE VISUALIZZAZIONE =================================== -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack" aria-labelledby="imp-pref-titolo">
+    <h3 id="imp-pref-titolo" class="sc-card__title">Preferenze visualizzazione</h3>
+
+    <div class="sc-field">
+      <span class="sc-label" id="imp-tema-label">Tema</span>
+      <div class="sc-segmented" role="radiogroup" x-radiogroup aria-labelledby="imp-tema-label">
+        <button type="button" class="sc-segmented__option" role="radio"
+                :aria-checked="tema === 'chiaro' ? 'true' : 'false'"
+                :tabindex="tema === 'chiaro' ? '0' : '-1'"
+                @click="impostaTema('chiaro')">Chiaro</button>
+        <button type="button" class="sc-segmented__option" role="radio"
+                :aria-checked="tema === 'scuro' ? 'true' : 'false'"
+                :tabindex="tema === 'scuro' ? '0' : '-1'"
+                @click="impostaTema('scuro')">Scuro</button>
+        <button type="button" class="sc-segmented__option" role="radio"
+                :aria-checked="tema === 'auto' ? 'true' : 'false'"
+                :tabindex="tema === 'auto' ? '0' : '-1'"
+                @click="impostaTema('auto')">Automatico</button>
+      </div>
+      <p class="sc-field__hint">"Automatico" segue le impostazioni del dispositivo.</p>
+    </div>
+
+    <div class="sc-field">
+      <span class="sc-label" id="imp-testo-label">Dimensione testo</span>
+      <div class="sc-segmented" role="radiogroup" x-radiogroup aria-labelledby="imp-testo-label">
+        <button type="button" class="sc-segmented__option" role="radio"
+                :aria-checked="dimensioneTesto === 'piccolo' ? 'true' : 'false'"
+                :tabindex="dimensioneTesto === 'piccolo' ? '0' : '-1'"
+                @click="impostaDimensioneTesto('piccolo')">Piccolo</button>
+        <button type="button" class="sc-segmented__option" role="radio"
+                :aria-checked="dimensioneTesto === 'normale' ? 'true' : 'false'"
+                :tabindex="dimensioneTesto === 'normale' ? '0' : '-1'"
+                @click="impostaDimensioneTesto('normale')">Normale</button>
+        <button type="button" class="sc-segmented__option" role="radio"
+                :aria-checked="dimensioneTesto === 'grande' ? 'true' : 'false'"
+                :tabindex="dimensioneTesto === 'grande' ? '0' : '-1'"
+                @click="impostaDimensioneTesto('grande')">Grande</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === INFORMAZIONI APP ============================================= -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack sc-stack--tight" aria-labelledby="imp-info-titolo">
+    <h3 id="imp-info-titolo" class="sc-card__title">Informazioni</h3>
+    <dl class="sc-stack sc-stack--tight imp-info">
+      <div class="sc-row sc-row--between">
+        <dt class="sc-text-muted">Versione</dt>
+        <dd class="imp-info__valore" x-text="appVersion">—</dd>
+      </div>
+      <div class="sc-row sc-row--between">
+        <dt class="sc-text-muted">Service Worker</dt>
+        <dd class="imp-info__valore" x-text="swAttivo ? 'attivo' : 'non attivo'">—</dd>
+      </div>
+      <div class="sc-row sc-row--between" x-show="storage" x-cloak>
+        <dt class="sc-text-muted">Spazio utilizzato</dt>
+        <dd class="imp-info__valore">
+          <span x-text="storage ? storage.usatoMB : '—'"></span> MB
+          <template x-if="storage && storage.quotaMB">
+            <span class="sc-text-muted">
+              / <span x-text="storage.quotaMB"></span> MB
+            </span>
+          </template>
+        </dd>
+      </div>
+    </dl>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === ZONA PERICOLOSA: RESET APP =================================== -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack imp-zona-pericolo" aria-labelledby="imp-reset-titolo">
+    <h3 id="imp-reset-titolo" class="sc-card__title">Reset applicazione</h3>
+    <p class="sc-field__hint sc-mt-0">
+      Cancella tutti i dati salvati su questo dispositivo: verbali, anagrafica,
+      impostazioni e firma. Utile prima di passare l'iPad a un altro collega.
+      L'operazione non è reversibile.
+    </p>
+    <div>
+      <button type="button" class="sc-btn sc-btn--danger" @click="avviaReset()">
+        Cancella tutti i dati
+      </button>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === MODAL: CANVAS FIRMA ========================================== -->
+  <!-- =================================================================== -->
+  <template x-if="modalFirmaAperto">
+    <div class="sc-overlay" @click.self="chiudiModalFirma()">
+      <div
+        class="sc-sheet"
+        x-ref="modalFirma"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="imp-firma-modal-titolo"
+        tabindex="-1"
+      >
+        <div class="sc-sheet__header">
+          <h3 id="imp-firma-modal-titolo" class="sc-card__title">La tua firma</h3>
+          <button type="button" class="sc-iconbtn" @click="chiudiModalFirma()" aria-label="Chiudi senza salvare">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="imp-firma-box">
+          <canvas
+            x-ref="canvasFirma"
+            class="imp-firma-canvas"
+            role="img"
+            aria-label="Area di firma. Disegna con il dito o con un pennino."
+          ></canvas>
+        </div>
+
+        <p class="sc-field__hint imp-firma-istruzione">
+          Firma con il dito o con un pennino.
+        </p>
+
+        <div class="sc-row sc-row--between imp-firma-azioni">
+          <button type="button" class="sc-btn sc-btn--secondary" @click="pulisciCanvasFirma()">
+            Cancella
+          </button>
+          <button
+            type="button"
+            class="sc-btn sc-btn--primary"
+            @click="confermaFirma()"
+            :disabled="firmaCanvasVuoto"
+            :aria-disabled="firmaCanvasVuoto ? 'true' : 'false'"
+          >
+            Conferma
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- =================================================================== -->
+  <!-- === MODAL: RESET DOPPIA CONFERMA ================================= -->
+  <!-- =================================================================== -->
+  <template x-if="statoReset !== 'chiuso'">
+    <div class="sc-overlay" @click.self="annullaReset()">
+      <div
+        class="sc-sheet"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-labelledby="statoReset === 'step1' ? 'imp-reset-modal-titolo-1' : 'imp-reset-modal-titolo-2'"
+        :aria-describedby="statoReset === 'step1' ? 'imp-reset-modal-desc-1' : 'imp-reset-modal-desc-2'"
+        tabindex="-1"
+        x-init="$nextTick(() => $el.focus())"
+        @keydown.escape="annullaReset()"
+      >
+        <!-- STEP 1 -->
+        <template x-if="statoReset === 'step1'">
+          <div class="sc-stack">
+            <h3 id="imp-reset-modal-titolo-1" class="sc-card__title">Cancellare tutti i dati?</h3>
+            <p id="imp-reset-modal-desc-1">
+              Stai per eliminare definitivamente tutti i verbali, l'anagrafica, le
+              impostazioni e la firma salvati su questo dispositivo.
+            </p>
+            <div class="sc-row sc-row--between">
+              <button type="button" class="sc-btn sc-btn--secondary" @click="annullaReset()">
+                Annulla
+              </button>
+              <button type="button" class="sc-btn sc-btn--danger" @click="confermaResetStep1()">
+                Continua
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- STEP 2 -->
+        <template x-if="statoReset === 'step2'">
+          <div class="sc-stack">
+            <h3 id="imp-reset-modal-titolo-2" class="sc-card__title">Confermi definitivamente?</h3>
+            <p id="imp-reset-modal-desc-2">
+              Questa azione non può essere annullata. Tutti i dati verranno
+              cancellati e SafeCant tornerà allo stato iniziale.
+            </p>
+            <div class="sc-row sc-row--between">
+              <button type="button" class="sc-btn sc-btn--secondary" @click="annullaReset()">
+                No, mantieni i dati
+              </button>
+              <button type="button" class="sc-btn sc-btn--danger" @click="eseguiReset()">
+                Sì, cancella tutto
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+</div>
+<!-- ── /moduli/impostazioni/impostazioni.html ──────────────────────────── -->
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- =================================================================== -->
+  <!-- === REGIONE TOAST / OVERLAY GLOBALI =============================== -->
+  <!-- Contenitore dei toast e degli overlay a livello app. data-sc-keep-    -->
+  <!-- interactive impedisce ad a11y.js di renderlo inerte quando un altro   -->
+  <!-- modal isola lo sfondo, così i toast restano annunciabili e visibili.  -->
+  <!-- =================================================================== -->
+  <div id="sc-overlay-root" data-sc-keep-interactive="true"></div>
+
+  <!-- =================================================================== -->
+  <!-- === FALLBACK NO-JS =============================================== -->
+  <!-- SafeCant richiede JavaScript (PWA offline-first con IDB e Alpine).    -->
+  <!-- Senza JS mostriamo un messaggio umano invece di una pagina vuota.     -->
+  <!-- =================================================================== -->
+  <noscript>
+    <div class="sc-empty">
+      <p class="sc-empty__title">JavaScript necessario</p>
+      <p>SafeCant ha bisogno di JavaScript attivo per funzionare. Attivalo nelle
+         impostazioni del browser e ricarica la pagina.</p>
+    </div>
+  </noscript>
+
+  <!-- =================================================================== -->
+  <!-- === REGISTRAZIONE SERVICE WORKER ================================= -->
+  <!--
+    Registrazione difensiva: solo se il browser supporta i SW e dopo `load`,
+    per non competere con il caricamento iniziale dell'app. Un fallimento di
+    registrazione NON deve rompere l'app (degrada a PWA senza offline):
+    logghiamo l'errore e proseguiamo. La gestione dell'aggiornamento ("nuova
+    versione disponibile, ricarica") vivrà qui in coordinamento con sw.js.
+  -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      // Riferimento al SW appena installato e in attesa: lo conserviamo per
+      // poterlo attivare quando l'utente accetta l'aggiornamento.
+      let swInAttesa = null;
+
+      // Ricarica UNA volta sola quando il nuovo SW prende il controllo. Il flag
+      // evita il loop di reload che capita se più schede cambiano controller.
+      let inRicarica = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (inRicarica) return;
+        inRicarica = true;
+        window.location.reload();
+      });
+
+      // Esposta globalmente: il toast "nuova versione" (gestito da Alpine) la
+      // invoca quando l'utente tocca "Ricarica". Diciamo al SW in attesa di
+      // attivarsi (SKIP_WAITING); il controllerchange qui sopra farà il reload.
+      window.scApplicaAggiornamento = () => {
+        if (swInAttesa) swInAttesa.postMessage({ type: 'SKIP_WAITING' });
+      };
+
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then((reg) => {
+          // Se al caricamento c'è già un SW in attesa (utente tornato dopo che
+          // l'update era pronto), segnaliamolo subito.
+          if (reg.waiting && navigator.serviceWorker.controller) {
+            swInAttesa = reg.waiting;
+            window.dispatchEvent(new CustomEvent('sc:sw-aggiornato'));
+          }
+
+          // Quando un nuovo SW finisce l'installazione, avvisiamo l'utente
+          // tramite lo store globale (impostato in alpine-init.js).
+          reg.addEventListener('updatefound', () => {
+            const nuovo = reg.installing;
+            if (!nuovo) return;
+            nuovo.addEventListener('statechange', () => {
+              // 'installed' + un controller già presente = aggiornamento pronto.
+              if (nuovo.state === 'installed' && navigator.serviceWorker.controller) {
+                swInAttesa = nuovo;
+                window.dispatchEvent(new CustomEvent('sc:sw-aggiornato'));
+              }
+            });
+          });
+        }).catch((err) => {
+          console.error('[sw] Registrazione fallita:', err);
+        });
+      });
+    }
+  </script>
+
+</body>
+</html>

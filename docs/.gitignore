@@ -1,0 +1,54 @@
+# ============================================================================
+# SafeCant — .gitignore
+# Progetto no-build: niente bundler né node_modules da escludere. Qui teniamo
+# fuori solo ciò che è locale alla macchina o generato, mai il codice sorgente.
+# ============================================================================
+
+# --- File di sistema operativo ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# --- Editor e IDE ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# --- Log e diagnostica ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Dipendenze (non usate in runtime, ma talvolta installate da tool locali) ---
+node_modules/
+.npm/
+
+# --- File temporanei e di build accidentali ---
+*.tmp
+*.temp
+.cache/
+dist/
+build/
+
+# --- Ambiente locale / segreti ---
+# SafeCant non richiede variabili d'ambiente per girare, ma preveniamo il commit
+# accidentale di eventuali file di configurazione locale o credenziali.
+.env
+.env.*
+*.local
+
+# --- Dati di test locali ---
+# Eventuali anagrafiche o verbali di prova non devono finire nel repo
+# (riservatezza dei dati di cantiere).
+*.test.json
+/test-data/

@@ -1,0 +1,229 @@
+<!--
+  SafeCant — moduli/anagrafica/anagrafica.html
+  ============================================================================
+  Vista Anagrafica (Area 3), read-only. Parziale montato dentro
+  <section data-route="anagrafica"> di index.html.
+
+  PRINCIPI DI MARKUP (contratto 11.2, progettazione 7.1 / 10)
+   - Accordion con <details>/<summary> NATIVI: accessibili e tastierabili senza
+     una riga di JS o ARIA aggiuntivo (la progettazione lo chiede esplicitamente).
+   - Liste semantiche <ul role="list"> per le voci.
+   - Input file nascosto pilotato da un <button> visibile (gli input file grezzi
+     sono brutti e poco accessibili; il bottone è chiaro e touch-friendly).
+   - Ricerca come <input type="search"> con etichetta e annuncio risultati.
+   - $refs e handler combaciano con anagrafica.js.
+
+  Il componente x-data="anagrafica" è registrato in alpine-init.js.
+  ============================================================================
+-->
+<div x-data="anagrafica" class="sc-stack sc-stack--loose">
+
+  <h2>Anagrafica cantiere</h2>
+
+  <!-- =================================================================== -->
+  <!-- === IMPORTAZIONE ================================================= -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack" aria-labelledby="ana-import-titolo">
+    <h3 id="ana-import-titolo" class="sc-card__title">Importa anagrafica</h3>
+
+    <!-- Versione attualmente caricata, se presente. -->
+    <template x-if="!vuota">
+      <p class="sc-field__hint sc-mt-0">
+        Caricata: <strong x-text="etichettaVersione"></strong>
+      </p>
+    </template>
+    <template x-if="vuota">
+      <p class="sc-field__hint sc-mt-0">
+        Nessuna anagrafica caricata. Importa il file che trovi nella cartella
+        condivisa del cantiere.
+      </p>
+    </template>
+
+    <div>
+      <button
+        type="button"
+        class="sc-btn sc-btn--primary"
+        @click="apriFilePicker()"
+        :aria-busy="statoImport === 'in_corso' ? 'true' : 'false'"
+        :disabled="statoImport === 'in_corso'"
+      >
+        <span x-show="statoImport !== 'in_corso'" x-text="vuota ? 'Importa anagrafica' : 'Importa anagrafica aggiornata'"></span>
+        <span x-show="statoImport === 'in_corso'" x-cloak>Importazione in corso…</span>
+      </button>
+
+      <!-- Input file reale: nascosto ma presente nel DOM. accept guida il picker
+           verso i .json; il change è gestito dal componente. -->
+      <input
+        x-ref="fileInput"
+        type="file"
+        accept="application/json,.json"
+        class="sc-visually-hidden"
+        @change="onFileScelto($event)"
+        aria-hidden="true"
+        tabindex="-1"
+      >
+    </div>
+
+    <!-- Errore d'importazione: annunciato (aria-live assertive lo fa già via
+         announce nel JS) e mostrato a video con stile d'errore. -->
+    <template x-if="statoImport === 'errore' && erroreImport">
+      <p class="sc-field__error" role="alert" x-text="erroreImport"></p>
+    </template>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === CONSULTAZIONE (solo se un'anagrafica è caricata) ============= -->
+  <!-- =================================================================== -->
+  <template x-if="!vuota">
+    <div class="sc-stack">
+
+      <!-- Ricerca trasversale a tutte le sezioni. -->
+      <div class="sc-field">
+        <label class="sc-label" for="ana-ricerca">Cerca</label>
+        <input
+          id="ana-ricerca"
+          class="sc-input"
+          type="search"
+          x-model="ricerca"
+          placeholder="Nome, impresa, qualifica…"
+          aria-describedby="ana-ricerca-hint"
+        >
+        <p id="ana-ricerca-hint" class="sc-field__hint">
+          Filtra imprese, lavoratori, mezzi e persone.
+        </p>
+      </div>
+
+      <!-- SEZIONE: IMPRESE ---------------------------------------------- -->
+      <details class="sc-card ana-sezione" open>
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Imprese</span>
+          <span class="ana-conteggio" x-text="numImprese" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numImprese} imprese`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="imp in filtra(corrente.imprese)" :key="imp.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="imp.ragione_sociale"></span>
+              <template x-if="imp.ruolo">
+                <span class="ana-voce__meta" x-text="imp.ruolo"></span>
+              </template>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.imprese).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+      <!-- SEZIONE: LAVORATORI ------------------------------------------- -->
+      <details class="sc-card ana-sezione">
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Lavoratori</span>
+          <span class="ana-conteggio" x-text="numLavoratori" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numLavoratori} lavoratori`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="lav in filtra(corrente.lavoratori)" :key="lav.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="lav.nome_cognome"></span>
+              <span class="ana-voce__meta">
+                <span x-text="lav.qualifica"></span>
+                <template x-if="nomeImpresa(lav.impresa_id)">
+                  <span> · <span x-text="nomeImpresa(lav.impresa_id)"></span></span>
+                </template>
+              </span>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.lavoratori).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+      <!-- SEZIONE: MEZZI E ATTREZZATURE --------------------------------- -->
+      <details class="sc-card ana-sezione">
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Mezzi e attrezzature</span>
+          <span class="ana-conteggio" x-text="numMezzi" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numMezzi} mezzi e attrezzature`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="mez in filtra(corrente.mezzi_attrezzature)" :key="mez.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="mez.tipologia"></span>
+              <span class="ana-voce__meta">
+                <template x-if="mez.marca || mez.modello">
+                  <span x-text="[mez.marca, mez.modello].filter(Boolean).join(' ')"></span>
+                </template>
+                <template x-if="nomeImpresa(mez.impresa_id)">
+                  <span> · <span x-text="nomeImpresa(mez.impresa_id)"></span></span>
+                </template>
+              </span>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.mezzi_attrezzature).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+      <!-- SEZIONE: PERSONE COMMITTENTE ---------------------------------- -->
+      <details class="sc-card ana-sezione">
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Persone committente</span>
+          <span class="ana-conteggio" x-text="numCommittente" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numCommittente} persone del committente`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="pc in filtra(corrente.persone_committente)" :key="pc.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="pc.nome_cognome"></span>
+              <span class="ana-voce__meta" x-text="pc.qualifica"></span>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.persone_committente).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+      <!-- SEZIONE: PERSONE TERZI ---------------------------------------- -->
+      <details class="sc-card ana-sezione">
+        <summary class="ana-sezione__summary">
+          <span class="sc-card__title">Persone terzi</span>
+          <span class="ana-conteggio" x-text="numTerzi" aria-hidden="true"></span>
+          <span class="sc-visually-hidden" x-text="`${numTerzi} persone terze`"></span>
+        </summary>
+        <ul role="list" class="ana-lista">
+          <template x-for="pt in filtra(corrente.persone_terzi)" :key="pt.id">
+            <li class="ana-voce">
+              <span class="ana-voce__nome" x-text="pt.nome_cognome"></span>
+              <span class="ana-voce__meta">
+                <span x-text="pt.qualifica"></span>
+                <template x-if="pt.ente">
+                  <span> · <span x-text="pt.ente"></span></span>
+                </template>
+              </span>
+            </li>
+          </template>
+          <template x-if="filtra(corrente.persone_terzi).length === 0">
+            <li class="ana-voce ana-voce--vuota sc-text-muted">Nessun risultato</li>
+          </template>
+        </ul>
+      </details>
+
+    </div>
+  </template>
+
+  <!-- =================================================================== -->
+  <!-- === STATO VUOTO (nessuna anagrafica) ============================= -->
+  <!-- =================================================================== -->
+  <template x-if="vuota && statoImport !== 'in_corso'">
+    <div class="sc-empty">
+      <p class="sc-empty__title">Nessuna anagrafica</p>
+      <p>Importa il file dell'anagrafica del cantiere per consultare imprese,
+         lavoratori, mezzi e persone durante i sopralluoghi.</p>
+    </div>
+  </template>
+
+</div>

@@ -1,0 +1,893 @@
+/* ============================================================================
+   SafeCant — shared/styles.css
+   Design system condiviso dell'intera PWA.
+   ----------------------------------------------------------------------------
+   Perché questo file esiste e com'è organizzato:
+   - È l'UNICA fonte di verità per colori, tipografia, spacing, motion, ombre.
+     Ogni modulo (cruscotto, editor, anagrafica, impostazioni) consuma questi
+     token via var(--...). Cambiare un token qui si propaga ovunque: niente
+     valori magici sparsi nei CSS dei moduli.
+   - Approccio rigorosamente MOBILE-FIRST: gli stili base valgono da 320px in su,
+     gli override per breakpoint maggiori si aggiungono dopo (vedi sez. LAYOUT).
+   - Convenzione nomenclatura classi: BEM con prefisso prodotto `sc-`
+     (es. `sc-card`, `sc-card__title`, `sc-card--bozza`). Il prefisso evita
+     collisioni con le utility Tailwind caricate da CDN.
+   - Il tema (chiaro/scuro/auto) e la dimensione testo sono pilotati da attributi
+     su <html> (data-theme, data-text-size) scritti da impostazioni.js. Tutta la
+     palette è ridefinita per tema: i componenti non sanno nulla del tema, leggono
+     solo i token semantici (--sc-color-surface, --sc-color-text, ...).
+
+   Ordine del file (sezioni delimitate da banner):
+     1. DESIGN TOKENS      — :root, temi, scala testo
+     2. RESET              — normalizzazione cross-browser
+     3. BASE               — elementi HTML grezzi (body, headings, focus)
+     4. LAYOUT             — contenitori, header app, main, breakpoint
+     5. COMPONENTI         — bottoni, card, campi form, badge, dialog, toast...
+     6. UTILITY            — helper atomici (visually-hidden, stack, ecc.)
+   ============================================================================ */
+
+
+/* ============================================================================
+   1. DESIGN TOKENS
+   ============================================================================ */
+
+:root {
+  /* ----- Palette di marca (assoluta, indipendente dal tema) ---------------
+     Il blu istituzionale #0a1a8c è il theme_color dichiarato nel manifest.json:
+     teniamo allineati manifest e CSS per coerenza con la status bar in standalone. */
+  --sc-brand-900: #060f52;
+  --sc-brand-800: #0a1a8c;   /* primario di marca */
+  --sc-brand-700: #1430b0;
+  --sc-brand-600: #2647d6;
+  --sc-brand-500: #3b5ef0;
+  --sc-brand-100: #dde4ff;
+  --sc-brand-050: #eef2ff;
+
+  /* ----- Colori di stato (semantica trasversale ai temi) ------------------
+     Scelti per superare il contrasto WCAG AA (>= 4.5:1 su testo) sia su sfondo
+     chiaro che, con le varianti -on, su fondo colorato. Riusati dai badge stato
+     verbale (BOZZA/PRONTO INVIO/INVIATO) e dai livelli NC. */
+  --sc-success-700: #0f7a3d;
+  --sc-success-100: #d6f3e1;
+  --sc-warning-700: #9a5b00;  /* arancione "bozza": ambra scura per contrasto su bianco */
+  --sc-warning-100: #ffeccc;
+  --sc-danger-700:  #b3221d;
+  --sc-danger-100:  #ffe0de;
+  --sc-info-700:    #1430b0;
+  --sc-info-100:    #dde4ff;
+
+  /* ----- Livelli NC (gravità) ---------------------------------------------
+     Quattro tinte distinte e ordinate per gravità decrescente. Il colore non è
+     l'UNICO veicolo d'informazione (sempre accoppiato a testo del livello), per
+     non violare WCAG 1.4.1 "Use of Color". */
+  --sc-nc-gravissima: #7a0d12;
+  --sc-nc-grave:      #b3221d;
+  --sc-nc-media:      #9a5b00;
+  --sc-nc-lieve:      #8a7a00;
+
+  /* ----- Scala spaziatura (base 4px) --------------------------------------
+     Scala modulare in rem. Usata per padding, gap, margin: garantisce ritmo
+     verticale coerente e si adatta al cambio di dimensione testo (rem-based). */
+  --sc-space-1: 0.25rem;
+  --sc-space-2: 0.5rem;
+  --sc-space-3: 0.75rem;
+  --sc-space-4: 1rem;
+  --sc-space-5: 1.5rem;
+  --sc-space-6: 2rem;
+  --sc-space-7: 3rem;
+  --sc-space-8: 4rem;
+
+  /* ----- Tipografia -------------------------------------------------------
+     System font stack: zero richieste di rete (offline-first), rendering nativo
+     ad alta leggibilità su iPad/Android/desktop, nessun layout shift da webfont.
+     Scelta deliberata coerente col contratto ("preferire system fonts").
+     La scala è in rem così da rispondere a --sc-font-root (dimensione testo). */
+  --sc-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                  "Helvetica Neue", Arial, sans-serif;
+  --sc-font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono",
+                  Menlo, Consolas, monospace;
+
+  /* Dimensione root: ridefinita da [data-text-size] (vedi sotto).
+     16px è il default "normale" richiesto dalla progettazione (sez. 8.1). */
+  --sc-font-root: 16px;
+
+  --sc-text-xs:   0.75rem;
+  --sc-text-sm:   0.875rem;
+  --sc-text-base: 1rem;
+  --sc-text-lg:   1.125rem;
+  --sc-text-xl:   1.375rem;
+  --sc-text-2xl:  1.75rem;
+
+  --sc-leading-tight: 1.25;
+  --sc-leading-normal: 1.5;
+  --sc-leading-relaxed: 1.65;
+
+  --sc-weight-regular: 400;
+  --sc-weight-medium:  500;
+  --sc-weight-semibold: 600;
+  --sc-weight-bold:    700;
+
+  /* ----- Raggi, bordi, ombre ----------------------------------------------- */
+  --sc-radius-sm: 6px;
+  --sc-radius-md: 10px;
+  --sc-radius-lg: 16px;
+  --sc-radius-pill: 999px;
+
+  --sc-border-width: 1px;
+
+  /* Ombre morbide a doppio livello: profondità senza l'effetto "drop-shadow piatto". */
+  --sc-shadow-sm: 0 1px 2px rgba(6, 15, 82, 0.06),
+                  0 1px 3px rgba(6, 15, 82, 0.10);
+  --sc-shadow-md: 0 2px 6px rgba(6, 15, 82, 0.08),
+                  0 6px 16px rgba(6, 15, 82, 0.12);
+  --sc-shadow-lg: 0 8px 24px rgba(6, 15, 82, 0.16),
+                  0 16px 48px rgba(6, 15, 82, 0.18);
+
+  /* ----- Motion -----------------------------------------------------------
+     Durate brevi: l'app è uno strumento, le transizioni devono informare non
+     intrattenere. Curve "standard" (decelerazione) per entrate, lineare per
+     feedback immediati. Rispettate dal media query prefers-reduced-motion. */
+  --sc-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --sc-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --sc-duration-fast: 120ms;
+  --sc-duration-base: 200ms;
+  --sc-duration-slow: 320ms;
+
+  /* ----- Touch target -----------------------------------------------------
+     44px è il minimo WCAG 2.5.5 / Apple HIG. Esposto come token così che ogni
+     elemento interattivo possa garantirlo con min-height/min-width. */
+  --sc-touch-min: 44px;
+
+  /* ----- Z-index (scala dichiarata, niente numeri arbitrari) -------------- */
+  --sc-z-base: 1;
+  --sc-z-sticky: 100;
+  --sc-z-overlay: 1000;
+  --sc-z-dialog: 1100;
+  --sc-z-toast: 1200;
+
+  /* ----- Layout ------------------------------------------------------------ */
+  --sc-content-max: 720px;   /* larghezza leggibile su desktop: l'app resta "a colonna" */
+}
+
+/* ----- Tema CHIARO (default) ----------------------------------------------
+   I token semantici (surface/text/border...) sono ciò che i componenti leggono.
+   Cambiare tema = ridefinire SOLO questi, mai i componenti. */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --sc-color-bg:          #f4f6fb;  /* sfondo app */
+  --sc-color-surface:     #ffffff;  /* card, header, dialog */
+  --sc-color-surface-alt: #eef1f8;  /* righe alternate, campi disabilitati */
+  --sc-color-text:        #11151f;  /* testo primario, contrasto ~16:1 su surface */
+  --sc-color-text-muted:  #5a6373;  /* testo secondario, ~5.2:1 su surface */
+  --sc-color-border:      #d4d9e4;
+  --sc-color-border-strong: #aeb6c6;
+
+  --sc-color-primary:        var(--sc-brand-800);
+  --sc-color-primary-hover:  var(--sc-brand-700);
+  --sc-color-primary-active: var(--sc-brand-900);
+  --sc-color-on-primary:     #ffffff;
+
+  --sc-color-focus-ring: var(--sc-brand-500);
+
+  /* Stato connessione (pallini cruscotto) */
+  --sc-color-online:  var(--sc-success-700);
+  --sc-color-offline: var(--sc-danger-700);
+  --sc-color-limited: var(--sc-warning-700);
+}
+
+/* ----- Tema SCURO ----------------------------------------------------------
+   Contrasti ricalibrati: superfici non nero puro (#0e1220) per ridurre l'alone
+   su OLED e l'affaticamento, testo non bianco puro. Tutti i pairing testo/fondo
+   restano >= AA. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --sc-color-bg:          #0b0e17;
+  --sc-color-surface:     #161b29;
+  --sc-color-surface-alt: #1f2536;
+  --sc-color-text:        #eef1f8;
+  --sc-color-text-muted:  #a4adc0;
+  --sc-color-border:      #2c3447;
+  --sc-color-border-strong: #3d4760;
+
+  --sc-color-primary:        var(--sc-brand-500);
+  --sc-color-primary-hover:  var(--sc-brand-600);
+  --sc-color-primary-active: var(--sc-brand-100);
+  --sc-color-on-primary:     #0b0e17;
+
+  --sc-color-focus-ring: var(--sc-brand-500);
+
+  /* Stati: versioni più chiare per emergere sul fondo scuro mantenendo AA. */
+  --sc-color-online:  #3ddc84;
+  --sc-color-offline: #ff7a73;
+  --sc-color-limited: #ffc24d;
+
+  /* Le tinte -100 di stato/NC virano a fondi traslucidi scuri:
+     ridefinite per non risultare campiture pastello fuori contesto. */
+  --sc-success-100: rgba(61, 220, 132, 0.16);
+  --sc-warning-100: rgba(255, 194, 77, 0.16);
+  --sc-danger-100:  rgba(255, 122, 115, 0.16);
+  --sc-info-100:    rgba(59, 94, 240, 0.18);
+
+  --sc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sc-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --sc-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* ----- Tema AUTO -----------------------------------------------------------
+   Quando l'utente sceglie "auto", impostazioni.js mette data-theme="auto".
+   Qui ribaltiamo sui token scuri SOLO se il sistema preferisce dark. Così
+   "auto" segue l'OS senza JavaScript aggiuntivo. */
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] {
+    color-scheme: dark;
+    --sc-color-bg:          #0b0e17;
+    --sc-color-surface:     #161b29;
+    --sc-color-surface-alt: #1f2536;
+    --sc-color-text:        #eef1f8;
+    --sc-color-text-muted:  #a4adc0;
+    --sc-color-border:      #2c3447;
+    --sc-color-border-strong: #3d4760;
+    --sc-color-primary:        var(--sc-brand-500);
+    --sc-color-primary-hover:  var(--sc-brand-600);
+    --sc-color-primary-active: var(--sc-brand-100);
+    --sc-color-on-primary:     #0b0e17;
+    --sc-color-online:  #3ddc84;
+    --sc-color-offline: #ff7a73;
+    --sc-color-limited: #ffc24d;
+    --sc-success-100: rgba(61, 220, 132, 0.16);
+    --sc-warning-100: rgba(255, 194, 77, 0.16);
+    --sc-danger-100:  rgba(255, 122, 115, 0.16);
+    --sc-info-100:    rgba(59, 94, 240, 0.18);
+    --sc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --sc-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+    --sc-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* ----- Scala dimensione testo ---------------------------------------------
+   data-text-size su <html> regola SOLO --sc-font-root; tutta la tipografia è in
+   rem, quindi l'intera UI scala in modo proporzionale e prevedibile. Valori da
+   progettazione sez. 8.1 (piccolo 14 / normale 16 / grande 18). */
+[data-text-size="piccolo"] { --sc-font-root: 14px; }
+[data-text-size="normale"] { --sc-font-root: 16px; }
+[data-text-size="grande"]  { --sc-font-root: 18px; }
+
+
+/* ============================================================================
+   2. RESET
+   Reset minimale e mirato: normalizza i comportamenti che divergono tra i
+   browser target (Safari iOS, Chrome Android, desktop) senza azzerare la
+   semantica nativa di cui ci serviamo (es. <details>, <button>).
+   ============================================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+/* iOS Safari ingrandisce il testo in landscape: lo disattiviamo per controllo. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  font-size: var(--sc-font-root);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: var(--sc-leading-normal);
+}
+
+/* Media a blocco e fluide per default: evita overflow orizzontali su mobile. */
+img, svg, video, canvas {
+  display: block;
+  max-width: 100%;
+}
+
+/* Gli elementi form ereditano la tipografia invece di forzare quella UA. */
+input, button, textarea, select {
+  font: inherit;
+  color: inherit;
+}
+
+/* Rimuove l'highlight blu di tap su iOS, sostituito da stati :active espliciti. */
+a, button, [role="button"], summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Word-wrap difensivo: i nomi cantiere/impresa lunghi non devono sfondare. */
+h1, h2, h3, h4, p, span, td, th {
+  overflow-wrap: break-word;
+}
+
+/* x-cloak: Alpine rimuove questo attributo a idratazione avvenuta. La regola
+   nasconde gli elementi finché Alpine non è pronto, evitando che il markup
+   grezzo (con direttive non ancora valutate) lampeggi al primo paint.
+   Indispensabile perché il <body> di index.html porta x-cloak. */
+[x-cloak] {
+  display: none !important;
+}
+
+
+/* ============================================================================
+   3. BASE
+   ============================================================================ */
+
+body {
+  margin: 0;
+  font-family: var(--sc-font-sans);
+  font-size: var(--sc-text-base);
+  color: var(--sc-color-text);
+  background-color: var(--sc-color-bg);
+  /* Safe areas: rispettiamo notch / dynamic island su iPhone in standalone
+     (la progettazione lo richiede esplicitamente, sez. 11.4). */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  min-height: 100dvh; /* dvh: tiene conto delle barre dinamiche del browser mobile */
+}
+
+h1 { font-size: var(--sc-text-2xl); line-height: var(--sc-leading-tight); font-weight: var(--sc-weight-bold); }
+h2 { font-size: var(--sc-text-xl);  line-height: var(--sc-leading-tight); font-weight: var(--sc-weight-semibold); }
+h3 { font-size: var(--sc-text-lg);  line-height: var(--sc-leading-tight); font-weight: var(--sc-weight-semibold); }
+
+p { line-height: var(--sc-leading-relaxed); }
+
+/* ----- Focus visibile globale ---------------------------------------------
+   :focus-visible (non :focus) per mostrare l'anello solo a chi naviga da
+   tastiera, senza disturbare il tocco/mouse. Requisito WCAG 2.4.7. Un singolo
+   stile coerente per tutta l'app: niente outline rimosse senza sostituto. */
+:focus-visible {
+  outline: 3px solid var(--sc-color-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--sc-radius-sm);
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Selezione testo coerente con la marca. */
+::selection {
+  background: var(--sc-brand-100);
+  color: var(--sc-brand-900);
+}
+
+/* ----- Rispetto di prefers-reduced-motion ---------------------------------
+   Chi ha attivato la riduzione del movimento riceve transizioni quasi istantanee
+   ma NON nulle (1ms): manteniamo i cambi di stato senza animazione percepibile,
+   evitando salti bruschi che alcuni screen reader annunciano male. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+
+/* ============================================================================
+   4. LAYOUT
+   Strutture portanti dell'app. Mobile-first: la colonna singola è il default,
+   il vincolo di larghezza leggibile entra solo da tablet/desktop.
+   ============================================================================ */
+
+/* Shell applicativa: header sticky + main scrollabile. */
+.sc-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+/* Header dell'app (titolo SafeCant + cantiere + ingranaggio impostazioni). */
+.sc-appbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--sc-z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--sc-space-3);
+  padding: var(--sc-space-3) var(--sc-space-4);
+  background-color: var(--sc-color-surface);
+  border-bottom: var(--sc-border-width) solid var(--sc-color-border);
+  /* L'header si estende sotto la safe-area superiore mantenendo il contenuto
+     dentro l'area sicura, per un look "edge-to-edge" pulito in standalone. */
+  padding-top: calc(var(--sc-space-3) + env(safe-area-inset-top));
+  margin-top: calc(-1 * env(safe-area-inset-top));
+}
+
+.sc-appbar__titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* permette il troncamento del sottotitolo lungo */
+  flex: 1;
+}
+
+.sc-appbar__title {
+  font-size: var(--sc-text-lg);
+  font-weight: var(--sc-weight-bold);
+  color: var(--sc-color-primary);
+  line-height: 1.1;
+}
+
+.sc-appbar__subtitle {
+  font-size: var(--sc-text-sm);
+  color: var(--sc-color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Area contenuti: centrata e vincolata in larghezza per leggibilità su desktop. */
+.sc-main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--sc-content-max);
+  margin-inline: auto;
+  padding: var(--sc-space-4);
+}
+
+/* Barra di azioni inferiore sticky (es. Indietro/Avanti dello stepper). */
+.sc-actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--sc-z-sticky);
+  display: flex;
+  gap: var(--sc-space-3);
+  padding: var(--sc-space-3) var(--sc-space-4);
+  padding-bottom: calc(var(--sc-space-3) + env(safe-area-inset-bottom));
+  background-color: var(--sc-color-surface);
+  border-top: var(--sc-border-width) solid var(--sc-color-border);
+}
+
+/* ----- Breakpoint ---------------------------------------------------------
+   Allineati alla scala Tailwind dichiarata in progettazione (sez. 11.3).
+   Mobile-first: qui solo gli scostamenti per schermi grandi. */
+@media (min-width: 768px) {
+  .sc-main { padding: var(--sc-space-5); }
+}
+@media (min-width: 1024px) {
+  .sc-appbar { padding-inline: var(--sc-space-6); }
+  .sc-main   { padding-block: var(--sc-space-6); }
+}
+
+
+/* ============================================================================
+   5. COMPONENTI
+   Componenti base riusabili. Quelli specifici di un modulo vivono nel CSS del
+   modulo (es. editor.css), ma estendono SEMPRE questi token e queste basi.
+   ============================================================================ */
+
+/* ----- Bottoni ------------------------------------------------------------- */
+.sc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sc-space-2);
+  min-height: var(--sc-touch-min);     /* garanzia touch target */
+  padding: var(--sc-space-3) var(--sc-space-5);
+  border-radius: var(--sc-radius-md);
+  font-size: var(--sc-text-base);
+  font-weight: var(--sc-weight-semibold);
+  line-height: 1;
+  text-decoration: none;
+  user-select: none;
+  transition: background-color var(--sc-duration-fast) var(--sc-ease-standard),
+              transform var(--sc-duration-fast) var(--sc-ease-standard),
+              box-shadow var(--sc-duration-fast) var(--sc-ease-standard);
+}
+
+/* Micro-feedback al tocco: lieve affondamento. Comunica "premuto" senza ritardo. */
+.sc-btn:active {
+  transform: translateY(1px);
+}
+
+.sc-btn:disabled,
+.sc-btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.sc-btn--primary {
+  background-color: var(--sc-color-primary);
+  color: var(--sc-color-on-primary);
+  box-shadow: var(--sc-shadow-sm);
+}
+.sc-btn--primary:hover { background-color: var(--sc-color-primary-hover); }
+.sc-btn--primary:active { background-color: var(--sc-color-primary-active); }
+
+.sc-btn--secondary {
+  background-color: var(--sc-color-surface);
+  color: var(--sc-color-text);
+  border: var(--sc-border-width) solid var(--sc-color-border-strong);
+}
+.sc-btn--secondary:hover { background-color: var(--sc-color-surface-alt); }
+
+.sc-btn--ghost {
+  background-color: transparent;
+  color: var(--sc-color-primary);
+  padding-inline: var(--sc-space-3);
+}
+.sc-btn--ghost:hover { background-color: var(--sc-color-surface-alt); }
+
+.sc-btn--danger {
+  background-color: var(--sc-danger-700);
+  color: #ffffff;
+}
+
+.sc-btn--block { width: 100%; }
+
+/* Bottone-icona quadrato (ingranaggio, menu, chiudi): rispetta il touch target. */
+.sc-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sc-touch-min);
+  height: var(--sc-touch-min);
+  border-radius: var(--sc-radius-md);
+  color: var(--sc-color-text);
+  transition: background-color var(--sc-duration-fast) var(--sc-ease-standard);
+}
+.sc-iconbtn:hover { background-color: var(--sc-color-surface-alt); }
+.sc-iconbtn:active { transform: translateY(1px); }
+
+/* ----- Card ---------------------------------------------------------------- */
+.sc-card {
+  background-color: var(--sc-color-surface);
+  border: var(--sc-border-width) solid var(--sc-color-border);
+  border-radius: var(--sc-radius-lg);
+  padding: var(--sc-space-4);
+  box-shadow: var(--sc-shadow-sm);
+}
+
+.sc-card__title {
+  font-size: var(--sc-text-base);
+  font-weight: var(--sc-weight-semibold);
+}
+
+.sc-card__meta {
+  font-size: var(--sc-text-sm);
+  color: var(--sc-color-text-muted);
+}
+
+/* ----- Campi form ---------------------------------------------------------- */
+.sc-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-2);
+}
+
+.sc-label {
+  font-size: var(--sc-text-sm);
+  font-weight: var(--sc-weight-semibold);
+  color: var(--sc-color-text);
+}
+
+/* Asterisco campo obbligatorio: rosso visivo + l'aria-required sull'input copre
+   l'informazione per screen reader (il colore da solo non basta — WCAG 1.4.1). */
+.sc-label__required {
+  color: var(--sc-danger-700);
+  margin-inline-start: 2px;
+}
+
+.sc-input,
+.sc-textarea,
+.sc-select {
+  min-height: var(--sc-touch-min);
+  width: 100%;
+  padding: var(--sc-space-3);
+  background-color: var(--sc-color-surface);
+  color: var(--sc-color-text);
+  border: var(--sc-border-width) solid var(--sc-color-border-strong);
+  border-radius: var(--sc-radius-md);
+  font-size: var(--sc-text-base);
+  transition: border-color var(--sc-duration-fast) var(--sc-ease-standard),
+              box-shadow var(--sc-duration-fast) var(--sc-ease-standard);
+  /* 16px reali sull'input evitano lo zoom automatico di iOS al focus:
+     usiamo --sc-text-base (1rem) che a "normale" = 16px. Su "piccolo" (14px)
+     forziamo comunque 16px per non far zoomare Safari. */
+}
+@media (max-width: 767px) {
+  [data-text-size="piccolo"] .sc-input,
+  [data-text-size="piccolo"] .sc-textarea,
+  [data-text-size="piccolo"] .sc-select { font-size: 16px; }
+}
+
+.sc-textarea {
+  resize: vertical;
+  min-height: 6rem;
+  line-height: var(--sc-leading-normal);
+}
+
+.sc-input:focus,
+.sc-textarea:focus,
+.sc-select:focus {
+  border-color: var(--sc-color-primary);
+  box-shadow: 0 0 0 3px var(--sc-brand-100);
+  outline: none; /* sostituito dall'anello box-shadow sopra, più morbido sui campi */
+}
+
+/* Stato di errore: bordo rosso + il messaggio collegato via aria-describedby
+   (gestito dal markup del modulo) fornisce il testo all'AT. */
+.sc-input[aria-invalid="true"],
+.sc-textarea[aria-invalid="true"],
+.sc-select[aria-invalid="true"] {
+  border-color: var(--sc-danger-700);
+}
+.sc-input[aria-invalid="true"]:focus,
+.sc-textarea[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px var(--sc-danger-100);
+}
+
+.sc-field__error {
+  font-size: var(--sc-text-sm);
+  color: var(--sc-danger-700);
+}
+
+.sc-field__hint {
+  font-size: var(--sc-text-sm);
+  color: var(--sc-color-text-muted);
+}
+
+/* ----- Gruppo segmentato (meteo, livello NC) ------------------------------
+   Reso accessibile dal markup come role="radiogroup" con role="radio".
+   Qui solo la veste: pulsanti affiancati che wrappano su schermi stretti. */
+.sc-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sc-space-2);
+}
+
+.sc-segmented__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sc-space-2);
+  min-height: var(--sc-touch-min);
+  padding: var(--sc-space-2) var(--sc-space-4);
+  border: var(--sc-border-width) solid var(--sc-color-border-strong);
+  border-radius: var(--sc-radius-pill);
+  background-color: var(--sc-color-surface);
+  color: var(--sc-color-text);
+  font-size: var(--sc-text-sm);
+  font-weight: var(--sc-weight-medium);
+  transition: background-color var(--sc-duration-fast) var(--sc-ease-standard),
+              border-color var(--sc-duration-fast) var(--sc-ease-standard);
+}
+
+/* Stato selezionato pilotato da aria-checked: lo stile segue l'attributo ARIA,
+   così veste e semantica non possono divergere. */
+.sc-segmented__option[aria-checked="true"] {
+  background-color: var(--sc-color-primary);
+  border-color: var(--sc-color-primary);
+  color: var(--sc-color-on-primary);
+}
+
+/* ----- Badge --------------------------------------------------------------- */
+.sc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sc-space-1);
+  padding: 2px var(--sc-space-2);
+  border-radius: var(--sc-radius-pill);
+  font-size: var(--sc-text-xs);
+  font-weight: var(--sc-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Stati verbale: la coppia fondo-100 / testo-700 mantiene il contrasto AA. */
+.sc-badge--bozza        { background: var(--sc-warning-100); color: var(--sc-warning-700); }
+.sc-badge--pronto-invio { background: var(--sc-info-100);    color: var(--sc-info-700); }
+.sc-badge--inviato      { background: var(--sc-success-100); color: var(--sc-success-700); }
+.sc-badge--nc           { background: var(--sc-danger-100);  color: var(--sc-danger-700); }
+
+/* ----- Indicatore stato connessione --------------------------------------- */
+.sc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sc-space-2);
+  font-size: var(--sc-text-sm);
+  font-weight: var(--sc-weight-medium);
+}
+.sc-status__dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sc-status--online  .sc-status__dot { background: var(--sc-color-online); }
+.sc-status--offline .sc-status__dot { background: var(--sc-color-offline); }
+.sc-status--limitato .sc-status__dot { background: var(--sc-color-limited); }
+
+/* ----- Overlay + Dialog / Bottom sheet ------------------------------------
+   Base condivisa da: dialog conferma, bottom sheet "aggiungi presente", modal
+   canvas firma. Il focus trap e Esc sono gestiti in JS (a11y.js); qui la veste
+   e l'animazione d'ingresso. */
+.sc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--sc-z-overlay);
+  display: flex;
+  background: rgba(6, 15, 82, 0.45);
+  /* Su mobile il foglio entra dal basso (sheet), su desktop è centrato (dialog).
+     Default mobile-first: ancorato in fondo. */
+  align-items: flex-end;
+  justify-content: center;
+  animation: sc-fade-in var(--sc-duration-base) var(--sc-ease-standard);
+}
+
+.sc-sheet {
+  z-index: var(--sc-z-dialog);
+  width: 100%;
+  max-height: 90dvh;
+  overflow-y: auto;
+  background: var(--sc-color-surface);
+  border-top-left-radius: var(--sc-radius-lg);
+  border-top-right-radius: var(--sc-radius-lg);
+  padding: var(--sc-space-5);
+  padding-bottom: calc(var(--sc-space-5) + env(safe-area-inset-bottom));
+  box-shadow: var(--sc-shadow-lg);
+  animation: sc-slide-up var(--sc-duration-slow) var(--sc-ease-emphasized);
+}
+
+.sc-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sc-space-3);
+  margin-bottom: var(--sc-space-4);
+}
+
+/* Da tablet in su il foglio diventa un dialog centrato con larghezza contenuta. */
+@media (min-width: 768px) {
+  .sc-overlay { align-items: center; }
+  .sc-sheet {
+    max-width: 560px;
+    border-radius: var(--sc-radius-lg);
+    animation: sc-pop-in var(--sc-duration-base) var(--sc-ease-emphasized);
+    padding-bottom: var(--sc-space-5);
+  }
+}
+
+/* ----- Toast --------------------------------------------------------------
+   Notifica transitoria (verbale inviato, impostazioni salvate). Annunciata
+   all'AT tramite role="status"/aria-live nel markup; qui solo posizione e moto. */
+.sc-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--sc-space-6) + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: var(--sc-z-toast);
+  max-width: min(92vw, 520px);
+  padding: var(--sc-space-3) var(--sc-space-5);
+  background: var(--sc-color-text);
+  color: var(--sc-color-bg);
+  border-radius: var(--sc-radius-pill);
+  font-size: var(--sc-text-sm);
+  font-weight: var(--sc-weight-medium);
+  box-shadow: var(--sc-shadow-lg);
+  animation: sc-slide-up var(--sc-duration-base) var(--sc-ease-standard);
+}
+
+/* ----- Stato vuoto --------------------------------------------------------- */
+.sc-empty {
+  text-align: center;
+  padding: var(--sc-space-7) var(--sc-space-4);
+  color: var(--sc-color-text-muted);
+}
+.sc-empty__title {
+  font-size: var(--sc-text-lg);
+  font-weight: var(--sc-weight-semibold);
+  color: var(--sc-color-text);
+  margin-bottom: var(--sc-space-2);
+}
+
+
+/* ============================================================================
+   6. UTILITY
+   Helper atomici. Volutamente pochi: la maggior parte del layout usa i token e
+   le classi componente sopra; Tailwind CDN copre il resto al volo nei moduli.
+   ============================================================================ */
+
+/* Contenuto solo per screen reader (etichette, annunci live, skip target).
+   Tecnica standard "visually hidden" che NON usa display:none (resterebbe muto
+   agli AT) né width:0 (alcuni AT lo saltano). */
+.sc-visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Diventa visibile al focus: usato dallo "Salta al contenuto" in cima all'app. */
+.sc-skip-link {
+  position: absolute;
+  left: var(--sc-space-3);
+  top: var(--sc-space-3);
+  z-index: var(--sc-z-toast);
+  transform: translateY(-150%);
+  transition: transform var(--sc-duration-base) var(--sc-ease-standard);
+}
+.sc-skip-link:focus {
+  transform: translateY(0);
+}
+
+/* Stack verticale a spaziatura coerente: alternativa leggibile a margini sparsi. */
+.sc-stack > * + * { margin-top: var(--sc-space-4); }
+.sc-stack--tight > * + * { margin-top: var(--sc-space-2); }
+.sc-stack--loose > * + * { margin-top: var(--sc-space-5); }
+
+/* Riga flessibile con allineamento verticale centrato (uso ricorrente). */
+.sc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-space-3);
+}
+.sc-row--between { justify-content: space-between; }
+.sc-row--wrap { flex-wrap: wrap; }
+
+.sc-text-muted { color: var(--sc-color-text-muted); }
+.sc-text-sm { font-size: var(--sc-text-sm); }
+.sc-text-center { text-align: center; }
+.sc-mt-0 { margin-top: 0; }
+.sc-full { width: 100%; }
+
+/* Blocca lo scroll del body quando un overlay è aperto (impostata via JS sul body). */
+.sc-scroll-locked {
+  overflow: hidden;
+  touch-action: none;
+}
+
+
+/* ============================================================================
+   KEYFRAMES
+   Animazioni d'ingresso riutilizzate dai componenti. Tutte neutralizzate da
+   prefers-reduced-motion (vedi sez. BASE).
+   ============================================================================ */
+
+@keyframes sc-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes sc-slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Variante per il toast, che è già translateX(-50%): qui combiniamo le due
+   trasformazioni per non perdere la centratura orizzontale durante il moto. */
+.sc-toast {
+  animation-name: sc-toast-in;
+}
+@keyframes sc-toast-in {
+  from { opacity: 0; transform: translate(-50%, 16px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes sc-pop-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}

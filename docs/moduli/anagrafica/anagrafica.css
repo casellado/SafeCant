@@ -1,0 +1,121 @@
+/* ============================================================================
+   SafeCant — moduli/anagrafica/anagrafica.css
+   ----------------------------------------------------------------------------
+   Stili SPECIFICI della vista Anagrafica. Come per impostazioni.css, minimi e
+   basati solo sui token del design system. Classi BEM con prefisso `ana-`.
+
+   Cosa aggiunge rispetto alle classi sc-:
+    - veste del <summary> nativo (cursore, freccia di apertura, layout a riga);
+    - un conteggio neutro dedicato (ana-conteggio), invece di riusare un badge di
+      STATO verbale che avrebbe semantica impropria;
+    - il layout a due righe delle voci (nome in evidenza, meta sotto).
+   ============================================================================ */
+
+/* ----- Accordion sezione ----------------------------------------------------
+   <details> usa già .sc-card per la cornice. Qui togliamo il padding di default
+   sul details e lo ridiamo alle parti interne, così il summary occupa l'intera
+   testata cliccabile (touch target ampio). */
+.ana-sezione {
+  padding: 0;
+  overflow: hidden; /* mantiene gli angoli arrotondati anche con liste lunghe */
+}
+
+/* La testata cliccabile dell'accordion. list-style:none rimuove il triangolino
+   nativo del browser, che sostituiamo con una nostra freccia controllabile.
+   min-height garantisce il touch target di 44px sull'intera riga. */
+.ana-sezione__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-space-3);
+  min-height: var(--sc-touch-min);
+  padding: var(--sc-space-4);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+/* WebKit/Safari: nasconde il marker nativo del <summary> (necessario oltre a
+   list-style:none, perché Safari usa uno pseudo-elemento dedicato). */
+.ana-sezione__summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Freccia di apertura: un singolo chevron CSS che ruota all'apertura. Spinto a
+   destra con margin-inline-start:auto così il titolo resta a sinistra e la
+   freccia all'estremità, col conteggio nel mezzo. */
+.ana-sezione__summary::after {
+  content: '';
+  margin-inline-start: auto;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-right: 2px solid var(--sc-color-text-muted);
+  border-bottom: 2px solid var(--sc-color-text-muted);
+  transform: rotate(45deg);          /* punta in basso = chiuso */
+  transition: transform var(--sc-duration-fast) var(--sc-ease-standard);
+}
+.ana-sezione[open] .ana-sezione__summary::after {
+  transform: rotate(-135deg);        /* punta in alto = aperto */
+}
+
+/* Focus visibile sull'intera testata quando si naviga da tastiera. */
+.ana-sezione__summary:focus-visible {
+  outline: 3px solid var(--sc-color-focus-ring);
+  outline-offset: -3px;              /* verso l'interno: non esce dalla card */
+}
+
+/* ----- Conteggio neutro -----------------------------------------------------
+   Pillola numerica accanto al titolo di sezione. Tono neutro (superficie alt +
+   testo muted): comunica "quantità", non uno stato semantico come i badge
+   verbale. Tabular-nums per cifre allineate. */
+.ana-conteggio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  padding: 2px var(--sc-space-2);
+  border-radius: var(--sc-radius-pill);
+  background: var(--sc-color-surface-alt);
+  color: var(--sc-color-text-muted);
+  font-size: var(--sc-text-xs);
+  font-weight: var(--sc-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----- Lista voci -----------------------------------------------------------
+   La lista vive sotto il summary; le diamo un bordo superiore sottile per
+   separarla dalla testata e il padding che il details aveva perso. */
+.ana-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--sc-space-4) var(--sc-space-3);
+  border-top: var(--sc-border-width) solid var(--sc-color-border);
+}
+
+/* Singola voce: due righe (nome forte, meta tenue). Righe separate da un filo
+   leggero per scorrere liste lunghe senza perdere il rigo. */
+.ana-voce {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sc-space-3) 0;
+  border-bottom: var(--sc-border-width) solid var(--sc-color-border);
+}
+.ana-voce:last-child {
+  border-bottom: none;
+}
+
+.ana-voce__nome {
+  font-weight: var(--sc-weight-medium);
+  color: var(--sc-color-text);
+}
+
+.ana-voce__meta {
+  font-size: var(--sc-text-sm);
+  color: var(--sc-color-text-muted);
+}
+
+/* Riga "Nessun risultato": centrata e senza separatore, non è una voce vera. */
+.ana-voce--vuota {
+  text-align: center;
+  border-bottom: none;
+  padding: var(--sc-space-4) 0;
+}

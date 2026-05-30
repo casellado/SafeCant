@@ -1,0 +1,85 @@
+/* ============================================================================
+   SafeCant — moduli/impostazioni/impostazioni.css
+   ----------------------------------------------------------------------------
+   Stili SPECIFICI della vista Impostazioni. Volutamente minimi: il design system
+   (shared/styles.css) copre card, form, bottoni, segmented, overlay e sheet con
+   le classi `sc-`. Qui vivono solo le rifiniture che quelle classi generiche non
+   esprimono, espresse come classi BEM con prefisso modulo `imp-` (contratto 11.1)
+   e basate ESCLUSIVAMENTE sui token (var(--sc-*)): nessun valore magico, così la
+   vista resta coerente coi temi e con la scala testo.
+
+   Perché esiste questo file invece di stili inline nell'HTML: gli attributi
+   style="" sparsi sono difficili da mantenere e da rivedere, non rispondono ai
+   temi se hardcodati, e violano la separazione struttura/presentazione. Tutto
+   ciò che era inline nel markup è stato portato qui come classe.
+   ============================================================================ */
+
+/* ----- Area anteprima firma -------------------------------------------------
+   Riquadro che mostra la firma salvata o lo stato "nessuna firma". Altezza
+   minima fissa per evitare layout shift quando la firma compare o sparisce. */
+.imp-firma-anteprima {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 8rem;
+  background: var(--sc-color-surface-alt);
+}
+
+/* L'immagine della firma: limitata in altezza, larghezza proporzionale. Su fondo
+   chiaro la firma nera si legge; in tema scuro la firma (PNG nero trasparente)
+   rischierebbe di sparire, quindi le diamo un fondo chiaro dedicato così resta
+   sempre visibile — la firma è un dato legale, deve vedersi in ogni tema. */
+.imp-firma-anteprima__img {
+  max-height: 6.5rem;
+  width: auto;
+  background: #ffffff;
+  padding: var(--sc-space-2);
+  border-radius: var(--sc-radius-sm);
+}
+
+/* ----- Canvas firma (dentro il modal) --------------------------------------
+   Cornice tratteggiata che comunica "qui si disegna". Il canvas riempie la
+   larghezza; touch-action:none impedisce a iOS di interpretare il tratto come
+   scroll/zoom (ribadito qui oltre che via JS nel modulo firme-canvas). */
+.imp-firma-box {
+  border: 2px dashed var(--sc-color-border-strong);
+  border-radius: var(--sc-radius-md);
+  background: var(--sc-color-surface);
+  overflow: hidden;
+}
+
+.imp-firma-canvas {
+  display: block;
+  width: 100%;
+  height: 220px;          /* superficie ampia: più spazio = firma più naturale */
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.imp-firma-istruzione {
+  text-align: center;
+}
+
+/* Riga azioni del modal firma (Cancella / Conferma): leggero distacco dall'area
+   di disegno. Sostituisce l'ultimo style inline del markup. */
+.imp-firma-azioni {
+  margin-top: var(--sc-space-4);
+}
+
+/* ----- Lista informazioni (dl etichetta/valore) ----------------------------
+   La <dl> usa già .sc-row--between per allineare etichetta a sinistra e valore a
+   destra; qui azzeriamo solo i margini di default di dl/dd per un blocco compatto. */
+.imp-info {
+  margin: 0;
+}
+.imp-info__valore {
+  margin: 0;
+  font-variant-numeric: tabular-nums; /* cifre allineate per versione/MB */
+}
+
+/* ----- Zona pericolosa ------------------------------------------------------
+   Lieve accento per separare visivamente il reset distruttivo dal resto, senza
+   urlare: un bordo sul lato d'avvio richiama il colore di pericolo. */
+.imp-zona-pericolo {
+  border-inline-start: 3px solid var(--sc-danger-700);
+}

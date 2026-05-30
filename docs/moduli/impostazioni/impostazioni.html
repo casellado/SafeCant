@@ -1,0 +1,381 @@
+<!--
+  SafeCant — moduli/impostazioni/impostazioni.html
+  ============================================================================
+  Vista Impostazioni (Area 4). Parziale montato dentro
+  <section data-route="impostazioni"> di index.html.
+
+  PRINCIPI DI MARKUP (contratto 11.2, progettazione 10)
+   - HTML5 semantico: <section>/<fieldset>/<label>; bottoni veri, mai div cliccabili.
+   - Una sola <h1> nell'app (appbar): qui le intestazioni partono da <h2>.
+   - ARIA dove la semantica nativa non basta (radiogroup, dialog, live).
+   - Ogni campo ha <label for> esplicita e, se obbligatorio, aria-required +
+     asterisco; gli errori sono collegati via aria-describedby.
+   - I $refs (canvasFirma, modalFirma) combaciano con impostazioni.js.
+
+  Il componente x-data="impostazioni" è registrato in alpine-init.js.
+  ============================================================================
+-->
+<div x-data="impostazioni" class="sc-stack sc-stack--loose">
+
+  <!-- Intestazione vista. tabindex/-1 non serve: il focus al cambio rotta va su
+       <main>, questa h2 è solo gerarchia per gli screen reader. -->
+  <h2>Impostazioni</h2>
+
+  <!-- =================================================================== -->
+  <!-- === DATI PERSONALI =============================================== -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack" aria-labelledby="imp-dati-titolo">
+    <h3 id="imp-dati-titolo" class="sc-card__title">Dati personali</h3>
+    <p class="sc-field__hint sc-mt-0">
+      Nome e qualifica compaiono come redattore nei verbali che invii.
+    </p>
+
+    <!-- Nome e cognome (obbligatorio) -->
+    <div class="sc-field">
+      <label class="sc-label" for="imp-nome">
+        Nome e cognome
+        <span class="sc-label__required" aria-hidden="true">*</span>
+      </label>
+      <input
+        id="imp-nome"
+        class="sc-input"
+        type="text"
+        autocomplete="name"
+        x-model="nomeCognome"
+        @input="onCampoModificato()"
+        :aria-invalid="errori.nomeCognome ? 'true' : 'false'"
+        aria-required="true"
+        :aria-describedby="errori.nomeCognome ? 'imp-nome-err' : null"
+        placeholder="Es. Mario Rossi"
+      >
+      <!-- Messaggio d'errore collegato: appare solo quando il campo è invalido.
+           role/aria-live non servono qui perché il collegamento describedby lo
+           rende leggibile al focus; lo mostriamo/nascondiamo con x-show. -->
+      <p id="imp-nome-err" class="sc-field__error" x-show="errori.nomeCognome" x-cloak>
+        Inserisci nome e cognome.
+      </p>
+    </div>
+
+    <!-- Qualifica (obbligatorio) -->
+    <div class="sc-field">
+      <label class="sc-label" for="imp-qualifica">
+        Qualifica
+        <span class="sc-label__required" aria-hidden="true">*</span>
+      </label>
+      <input
+        id="imp-qualifica"
+        class="sc-input"
+        type="text"
+        x-model="qualifica"
+        @input="onCampoModificato()"
+        :aria-invalid="errori.qualifica ? 'true' : 'false'"
+        aria-required="true"
+        :aria-describedby="errori.qualifica ? 'imp-qualifica-err' : null"
+        placeholder="Es. Tecnico di cantiere"
+      >
+      <p id="imp-qualifica-err" class="sc-field__error" x-show="errori.qualifica" x-cloak>
+        Inserisci la qualifica.
+      </p>
+    </div>
+
+    <!-- Cantiere predefinito (opzionale): mostrato nel sottotitolo del cruscotto. -->
+    <div class="sc-field">
+      <label class="sc-label" for="imp-cantiere">Cantiere predefinito</label>
+      <input
+        id="imp-cantiere"
+        class="sc-input"
+        type="text"
+        inputmode="latin"
+        x-model="cantiereDefault"
+        @input="onCampoModificato()"
+        aria-describedby="imp-cantiere-hint"
+        placeholder="Es. CZ399"
+      >
+      <p id="imp-cantiere-hint" class="sc-field__hint">
+        Codice del cantiere su cui lavori più spesso. Puoi lasciarlo vuoto.
+      </p>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === FIRMA PERMANENTE ============================================= -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack" aria-labelledby="imp-firma-titolo">
+    <h3 id="imp-firma-titolo" class="sc-card__title">Firma permanente</h3>
+    <p class="sc-field__hint sc-mt-0">
+      Imposta la tua firma una volta: verrà proposta come firma del redattore
+      quando finalizzi un verbale, senza doverla ridisegnare ogni volta.
+    </p>
+
+    <!-- Anteprima firma: mostra l'immagine se impostata, altrimenti un vuoto.
+         L'area ha dimensione stabile per non far "saltare" il layout. -->
+    <div class="sc-card imp-firma-anteprima">
+      <template x-if="firmaPng">
+        <img
+          :src="firmaPng"
+          alt="Anteprima della tua firma permanente"
+          class="imp-firma-anteprima__img"
+        >
+      </template>
+      <template x-if="!firmaPng">
+        <span class="sc-text-muted">Nessuna firma impostata</span>
+      </template>
+    </div>
+
+    <div class="sc-row sc-row--wrap">
+      <button type="button" class="sc-btn sc-btn--primary" @click="apriModalFirma()">
+        <span x-text="firmaPng ? 'Modifica firma' : 'Imposta firma'"></span>
+      </button>
+      <button
+        type="button"
+        class="sc-btn sc-btn--secondary"
+        x-show="firmaPng"
+        @click="rimuoviFirma()"
+      >
+        Rimuovi firma
+      </button>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === PREFERENZE VISUALIZZAZIONE =================================== -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack" aria-labelledby="imp-pref-titolo">
+    <h3 id="imp-pref-titolo" class="sc-card__title">Preferenze visualizzazione</h3>
+
+    <!-- Tema: gruppo radio custom (pattern APG). Le frecce sono gestite dal JS
+         radioGroupKeys quando lo aggancia; qui i ruoli e aria-checked riflettono
+         lo stato reattivo, così veste e semantica non divergono. -->
+    <div class="sc-field">
+      <span class="sc-label" id="imp-tema-label">Tema</span>
+      <div class="sc-segmented" role="radiogroup" x-radiogroup aria-labelledby="imp-tema-label">
+        <button
+          type="button"
+          class="sc-segmented__option"
+          role="radio"
+          :aria-checked="tema === 'chiaro' ? 'true' : 'false'"
+          :tabindex="tema === 'chiaro' ? '0' : '-1'"
+          @click="impostaTema('chiaro')"
+        >Chiaro</button>
+        <button
+          type="button"
+          class="sc-segmented__option"
+          role="radio"
+          :aria-checked="tema === 'scuro' ? 'true' : 'false'"
+          :tabindex="tema === 'scuro' ? '0' : '-1'"
+          @click="impostaTema('scuro')"
+        >Scuro</button>
+        <button
+          type="button"
+          class="sc-segmented__option"
+          role="radio"
+          :aria-checked="tema === 'auto' ? 'true' : 'false'"
+          :tabindex="tema === 'auto' ? '0' : '-1'"
+          @click="impostaTema('auto')"
+        >Automatico</button>
+      </div>
+      <p class="sc-field__hint">"Automatico" segue le impostazioni del dispositivo.</p>
+    </div>
+
+    <!-- Dimensione testo -->
+    <div class="sc-field">
+      <span class="sc-label" id="imp-testo-label">Dimensione testo</span>
+      <div class="sc-segmented" role="radiogroup" x-radiogroup aria-labelledby="imp-testo-label">
+        <button
+          type="button"
+          class="sc-segmented__option"
+          role="radio"
+          :aria-checked="dimensioneTesto === 'piccolo' ? 'true' : 'false'"
+          :tabindex="dimensioneTesto === 'piccolo' ? '0' : '-1'"
+          @click="impostaDimensioneTesto('piccolo')"
+        >Piccolo</button>
+        <button
+          type="button"
+          class="sc-segmented__option"
+          role="radio"
+          :aria-checked="dimensioneTesto === 'normale' ? 'true' : 'false'"
+          :tabindex="dimensioneTesto === 'normale' ? '0' : '-1'"
+          @click="impostaDimensioneTesto('normale')"
+        >Normale</button>
+        <button
+          type="button"
+          class="sc-segmented__option"
+          role="radio"
+          :aria-checked="dimensioneTesto === 'grande' ? 'true' : 'false'"
+          :tabindex="dimensioneTesto === 'grande' ? '0' : '-1'"
+          @click="impostaDimensioneTesto('grande')"
+        >Grande</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === INFORMAZIONI APP ============================================= -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack sc-stack--tight" aria-labelledby="imp-info-titolo">
+    <h3 id="imp-info-titolo" class="sc-card__title">Informazioni</h3>
+    <!-- Lista descrittiva: coppie etichetta/valore semanticamente corrette. -->
+    <dl class="sc-stack sc-stack--tight imp-info">
+      <div class="sc-row sc-row--between">
+        <dt class="sc-text-muted">Versione</dt>
+        <dd class="imp-info__valore" x-text="appVersion">—</dd>
+      </div>
+      <div class="sc-row sc-row--between">
+        <dt class="sc-text-muted">Service Worker</dt>
+        <dd class="imp-info__valore" x-text="swAttivo ? 'attivo' : 'non attivo'">—</dd>
+      </div>
+      <div class="sc-row sc-row--between" x-show="storage" x-cloak>
+        <dt class="sc-text-muted">Spazio utilizzato</dt>
+        <dd class="imp-info__valore">
+          <span x-text="storage ? storage.usatoMB : '—'"></span> MB
+          <template x-if="storage && storage.quotaMB">
+            <span class="sc-text-muted">
+              / <span x-text="storage.quotaMB"></span> MB
+            </span>
+          </template>
+        </dd>
+      </div>
+    </dl>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === ZONA PERICOLOSA: RESET APP =================================== -->
+  <!-- =================================================================== -->
+  <section class="sc-card sc-stack imp-zona-pericolo" aria-labelledby="imp-reset-titolo">
+    <h3 id="imp-reset-titolo" class="sc-card__title">Reset applicazione</h3>
+    <p class="sc-field__hint sc-mt-0">
+      Cancella tutti i dati salvati su questo dispositivo: verbali, anagrafica,
+      impostazioni e firma. Utile prima di passare l'iPad a un altro collega.
+      L'operazione non è reversibile.
+    </p>
+    <div>
+      <button type="button" class="sc-btn sc-btn--danger" @click="avviaReset()">
+        Cancella tutti i dati
+      </button>
+    </div>
+  </section>
+
+  <!-- =================================================================== -->
+  <!-- === MODAL: CANVAS FIRMA ========================================== -->
+  <!-- Mostrato via x-show. role=dialog + aria-modal; tabindex=-1 sul         -->
+  <!-- contenitore così a11y.js può dargli focus se non ci fossero altri      -->
+  <!-- elementi focalizzabili. Il focus-trap è agganciato da impostazioni.js. -->
+  <!-- =================================================================== -->
+  <template x-if="modalFirmaAperto">
+    <div class="sc-overlay" @click.self="chiudiModalFirma()">
+      <div
+        class="sc-sheet"
+        x-ref="modalFirma"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="imp-firma-modal-titolo"
+        tabindex="-1"
+      >
+        <div class="sc-sheet__header">
+          <h3 id="imp-firma-modal-titolo" class="sc-card__title">La tua firma</h3>
+          <button
+            type="button"
+            class="sc-iconbtn"
+            @click="chiudiModalFirma()"
+            aria-label="Chiudi senza salvare"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Area di disegno. Il canvas è agganciato da impostazioni.js via
+             x-ref="canvasFirma". touch-action:none (in CSS) come garanzia oltre
+             a quanto fa il modulo via JS. Bordo tratteggiato = "qui si disegna". -->
+        <div class="imp-firma-box">
+          <canvas
+            x-ref="canvasFirma"
+            class="imp-firma-canvas"
+            role="img"
+            aria-label="Area di firma. Disegna con il dito o con un pennino."
+          ></canvas>
+        </div>
+
+        <p class="sc-field__hint imp-firma-istruzione">
+          Firma con il dito o con un pennino.
+        </p>
+
+        <div class="sc-row sc-row--between imp-firma-azioni">
+          <button type="button" class="sc-btn sc-btn--secondary" @click="pulisciCanvasFirma()">
+            Cancella
+          </button>
+          <button
+            type="button"
+            class="sc-btn sc-btn--primary"
+            @click="confermaFirma()"
+            :disabled="firmaCanvasVuoto"
+            :aria-disabled="firmaCanvasVuoto ? 'true' : 'false'"
+          >
+            Conferma
+          </button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- =================================================================== -->
+  <!-- === MODAL: RESET DOPPIA CONFERMA ================================= -->
+  <!-- Due step distinti per prevenire la cancellazione accidentale          -->
+  <!-- (progettazione 12.3). role=alertdialog perché è una decisione critica. -->
+  <!-- =================================================================== -->
+  <template x-if="statoReset !== 'chiuso'">
+    <div class="sc-overlay" @click.self="annullaReset()">
+      <div
+        class="sc-sheet"
+        role="alertdialog"
+        aria-modal="true"
+        :aria-labelledby="statoReset === 'step1' ? 'imp-reset-modal-titolo-1' : 'imp-reset-modal-titolo-2'"
+        :aria-describedby="statoReset === 'step1' ? 'imp-reset-modal-desc-1' : 'imp-reset-modal-desc-2'"
+        tabindex="-1"
+        x-init="$nextTick(() => $el.focus())"
+        @keydown.escape="annullaReset()"
+      >
+        <!-- STEP 1 -->
+        <template x-if="statoReset === 'step1'">
+          <div class="sc-stack">
+            <h3 id="imp-reset-modal-titolo-1" class="sc-card__title">Cancellare tutti i dati?</h3>
+            <p id="imp-reset-modal-desc-1">
+              Stai per eliminare definitivamente tutti i verbali, l'anagrafica, le
+              impostazioni e la firma salvati su questo dispositivo.
+            </p>
+            <div class="sc-row sc-row--between">
+              <button type="button" class="sc-btn sc-btn--secondary" @click="annullaReset()">
+                Annulla
+              </button>
+              <button type="button" class="sc-btn sc-btn--danger" @click="confermaResetStep1()">
+                Continua
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- STEP 2 -->
+        <template x-if="statoReset === 'step2'">
+          <div class="sc-stack">
+            <h3 id="imp-reset-modal-titolo-2" class="sc-card__title">Confermi definitivamente?</h3>
+            <p id="imp-reset-modal-desc-2">
+              Questa azione non può essere annullata. Tutti i dati verranno
+              cancellati e SafeCant tornerà allo stato iniziale.
+            </p>
+            <div class="sc-row sc-row--between">
+              <button type="button" class="sc-btn sc-btn--secondary" @click="annullaReset()">
+                No, mantieni i dati
+              </button>
+              <button type="button" class="sc-btn sc-btn--danger" @click="eseguiReset()">
+                Sì, cancella tutto
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+</div>

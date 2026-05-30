@@ -1,0 +1,51 @@
+{
+  "name": "SafeCant — Verbali di Sopralluogo",
+  "short_name": "SafeCant",
+  "description": "Compilazione verbali di sopralluogo in cantiere",
+  "id": "/SafeCant/",
+  "start_url": "/SafeCant/",
+  "scope": "/SafeCant/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "lang": "it-IT",
+  "dir": "ltr",
+  "theme_color": "#0a1a8c",
+  "background_color": "#f4f6fb",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "shared/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "shared/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "shared/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "shared/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "share_target": {
+    "action": "/?ricevi-anagrafica",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}

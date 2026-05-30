@@ -1,0 +1,490 @@
+<!--
+  SafeCant — moduli/editor-verbale/editor.html
+  ============================================================================
+  Vista Editor Verbale (Area 2). Parziale montato dentro
+  <section data-route="editor"> di index.html. È il cuore dell'app.
+
+  STRUTTURA
+   - Stepper sticky in alto: <nav><ol> con stato per step (aria-current).
+   - Quattro pannelli step, uno visibile alla volta (x-show su stepCorrente).
+   - Action bar sticky in fondo: Indietro / Avanti (o Finalizza all'ultimo step).
+   - Quattro modal: sheet aggiungi presente, rifiuto firma, canvas firma,
+     finalizzazione (mancanze o conferma invio).
+
+  A11Y (progettazione 6, 10)
+   - Stepper: <nav aria-label>, <ol>, aria-current="step", aria-disabled sui futuri.
+   - Pannelli: role="tabpanel"-like via section con aria-label; heading <h3>.
+   - Radiogroup per meteo, livello NC, scelta firma redattore.
+   - Modal: role dialog/alertdialog, focus-trap dal JS, tabindex=-1.
+   - $refs (sheetPresente, modalRifiuto, canvasFirma, modalFirma, modalFinalizza)
+     combaciano con editor.js.
+
+  Componente x-data="editorVerbale" registrato in alpine-init.js.
+  ============================================================================
+-->
+<div x-data="editorVerbale">
+  <!-- Guardia: se per qualche motivo non c'è verbale, non rompere il render. -->
+  <template x-if="v">
+    <div class="ed-shell">
+
+      <!-- =============================================================== -->
+      <!-- === STEPPER =================================================== -->
+      <!-- =============================================================== -->
+      <nav class="ed-stepper" aria-label="Progresso compilazione verbale">
+        <ol class="ed-stepper__list">
+          <template x-for="s in [STEP.DATI, STEP.PRESENTI, STEP.NC, STEP.FIRME]" :key="s">
+            <li class="ed-stepper__item">
+              <button
+                type="button"
+                class="ed-stepper__btn"
+                :class="{
+                  'is-corrente': stepCorrente === s,
+                  'is-completo': completo(s) && stepCorrente !== s
+                }"
+                :aria-current="stepCorrente === s ? 'step' : null"
+                :aria-disabled="!accessibile(s) ? 'true' : 'false'"
+                :disabled="!accessibile(s)"
+                @click="vaiStep(s)"
+              >
+                <span class="ed-stepper__num" aria-hidden="true">
+                  <span x-show="!(completo(s) && stepCorrente !== s)" x-text="s"></span>
+                  <span x-show="completo(s) && stepCorrente !== s" x-cloak>✓</span>
+                </span>
+                <span class="ed-stepper__label" x-text="_titoloStep(s)"></span>
+              </button>
+            </li>
+          </template>
+        </ol>
+        <p class="ed-stepper__posizione" aria-live="polite">
+          Passo <span x-text="stepCorrente"></span> di <span x-text="NUM_STEP"></span>
+        </p>
+      </nav>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 1 — DATI GENERALI ==================================== -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.DATI" aria-label="Dati generali">
+        <h3>Dati generali</h3>
+
+        <div class="sc-field">
+          <label class="sc-label" for="ed-data">Data sopralluogo <span class="sc-label__required" aria-hidden="true">*</span></label>
+          <input id="ed-data" class="sc-input" type="date" x-model="v.data_sopralluogo" @input="onCampoModificato()" aria-required="true">
+        </div>
+
+        <div class="sc-field">
+          <label class="sc-label" for="ed-oggetto">Oggetto <span class="sc-label__required" aria-hidden="true">*</span></label>
+          <input id="ed-oggetto" class="sc-input" type="text" x-model="v.oggetto" @input="onCampoModificato()"
+                 placeholder="Es. Sopralluogo coordinamento e controllo" aria-required="true">
+        </div>
+
+        <!-- Condizioni meteo: radiogroup (progettazione 6.2). -->
+        <div class="sc-field">
+          <span class="sc-label" id="ed-meteo-label">Condizioni meteo <span class="sc-label__required" aria-hidden="true">*</span></span>
+          <div class="sc-segmented" role="radiogroup" x-radiogroup aria-labelledby="ed-meteo-label">
+            <template x-for="m in [
+              {v:'soleggiato', l:'☀️ Soleggiato'},
+              {v:'nuvoloso', l:'☁️ Nuvoloso'},
+              {v:'pioggia', l:'🌧 Pioggia'},
+              {v:'neve', l:'❄️ Neve'},
+              {v:'vento', l:'💨 Vento'}
+            ]" :key="m.v">
+              <button type="button" class="sc-segmented__option" role="radio"
+                      :aria-checked="v.condizioni_meteo === m.v ? 'true' : 'false'"
+                      :tabindex="v.condizioni_meteo === m.v ? '0' : '-1'"
+                      @click="impostaMeteo(m.v)" x-text="m.l"></button>
+            </template>
+          </div>
+        </div>
+
+        <!-- Progressive (opzionali) -->
+        <div class="ed-due-colonne">
+          <div class="sc-field">
+            <label class="sc-label" for="ed-prog-da">Progressiva inizio</label>
+            <input id="ed-prog-da" class="sc-input" type="text" x-model="v.progressiva_inizio" @input="onCampoModificato()" placeholder="Es. km 42+150">
+          </div>
+          <div class="sc-field">
+            <label class="sc-label" for="ed-prog-a">Progressiva fine</label>
+            <input id="ed-prog-a" class="sc-input" type="text" x-model="v.progressiva_fine" @input="onCampoModificato()" placeholder="Es. km 42+850">
+          </div>
+        </div>
+
+        <div class="sc-field">
+          <label class="sc-label" for="ed-luoghi">Stato dei luoghi <span class="sc-label__required" aria-hidden="true">*</span></label>
+          <textarea id="ed-luoghi" class="sc-textarea" x-model="v.stato_luoghi" @input="onCampoModificato()" rows="4" aria-required="true"
+                    placeholder="Descrivi lo stato dei luoghi…"></textarea>
+        </div>
+
+        <div class="sc-field">
+          <label class="sc-label" for="ed-prescrizioni">Prescrizioni impartite <span class="sc-label__required" aria-hidden="true">*</span></label>
+          <textarea id="ed-prescrizioni" class="sc-textarea" x-model="v.note_prescrizioni" @input="onCampoModificato()" rows="4" aria-required="true"
+                    placeholder="Indica le prescrizioni impartite…"></textarea>
+        </div>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 2 — PRESENTI ========================================= -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.PRESENTI" aria-label="Presenti">
+        <div class="sc-row sc-row--between">
+          <h3>Presenti al sopralluogo</h3>
+          <span class="ana-conteggio" x-text="v.presenti.length" aria-hidden="true"></span>
+        </div>
+
+        <p class="sc-empty" x-show="v.presenti.length === 0" x-cloak>
+          Nessun presente. Aggiungi le persone presenti al sopralluogo.
+        </p>
+
+        <ul role="list" class="sc-stack ed-presenti">
+          <template x-for="p in v.presenti" :key="p.id_locale">
+            <li class="sc-card ed-presente">
+              <div class="ed-presente__info">
+                <span class="ed-presente__nome" x-text="p.nome_cognome"></span>
+                <span class="ed-presente__meta">
+                  <span x-text="p.qualifica"></span>
+                  <template x-if="p.impresa"><span> · <span x-text="p.impresa"></span></span></template>
+                </span>
+                <!-- Stato firma -->
+                <span class="ed-presente__firma" x-show="statoFirmaPresente(p) === 'firmato'" x-cloak>
+                  ✍️ Firmato
+                </span>
+                <span class="ed-presente__firma is-rifiuto" x-show="statoFirmaPresente(p) === 'rifiutato'" x-cloak>
+                  ⚠️ Firma rifiutata<template x-if="p.motivo_rifiuto"><span> — <span x-text="p.motivo_rifiuto"></span></span></template>
+                </span>
+                <span class="ed-presente__firma is-attesa" x-show="statoFirmaPresente(p) === 'da_firmare'" x-cloak>
+                  ⏳ Da firmare
+                </span>
+              </div>
+              <div class="sc-row ed-presente__azioni">
+                <button type="button" class="sc-btn sc-btn--secondary" @click="apriFirma({tipo:'presente', presenteId:p.id_locale})"
+                        :aria-label="`Firma per ${p.nome_cognome}`">Firma</button>
+                <button type="button" class="sc-btn sc-btn--ghost" @click="apriRifiuto(p.id_locale)"
+                        :aria-label="`Registra rifiuto firma per ${p.nome_cognome}`">Rifiuto</button>
+                <button type="button" class="sc-iconbtn" @click="rimuoviPresente(p.id_locale)"
+                        :aria-label="`Rimuovi ${p.nome_cognome}`">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            </li>
+          </template>
+        </ul>
+
+        <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="apriSheetPresente()">
+          + Aggiungi presente
+        </button>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 3 — NON CONFORMITÀ =================================== -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.NC" aria-label="Non conformità">
+        <div class="sc-row sc-row--between">
+          <h3>Non conformità</h3>
+          <span class="ana-conteggio" x-text="v.nc_drafts.length" aria-hidden="true"></span>
+        </div>
+        <p class="sc-field__hint sc-mt-0">Le non conformità sono facoltative. Aggiungile se ne hai rilevate.</p>
+
+        <ul role="list" class="sc-stack ed-nc-lista">
+          <template x-for="(nc, idx) in v.nc_drafts" :key="nc.id_locale">
+            <li class="sc-card sc-stack">
+              <div class="sc-row sc-row--between">
+                <h4 x-text="`NC ${idx + 1}`"></h4>
+                <button type="button" class="sc-iconbtn" @click="rimuoviNc(nc.id_locale)" :aria-label="`Rimuovi NC ${idx + 1}`">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Livello: radiogroup con colore per gravità -->
+              <div class="sc-field">
+                <span class="sc-label" :id="`ed-nc-liv-${nc.id_locale}`">Livello</span>
+                <div class="sc-segmented" role="radiogroup" x-radiogroup :aria-labelledby="`ed-nc-liv-${nc.id_locale}`">
+                  <template x-for="liv in LIVELLI_NC" :key="liv">
+                    <button type="button" class="sc-segmented__option ed-nc-livello" :class="`is-${liv}`" role="radio"
+                            :aria-checked="nc.livello === liv ? 'true' : 'false'"
+                            :tabindex="nc.livello === liv ? '0' : '-1'"
+                            @click="impostaLivelloNc(nc.id_locale, liv)"
+                            x-text="liv.charAt(0).toUpperCase() + liv.slice(1)"></button>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Impresa (opzionale) -->
+              <div class="sc-field">
+                <label class="sc-label" :for="`ed-nc-imp-${nc.id_locale}`">Impresa</label>
+                <select :id="`ed-nc-imp-${nc.id_locale}`" class="sc-select" x-model="nc.impresa_id" @change="onCampoModificato()">
+                  <option value="">Nessuna impresa</option>
+                  <template x-for="imp in impreseAnagrafica" :key="imp.id">
+                    <option :value="imp.id" x-text="imp.ragione_sociale"></option>
+                  </template>
+                </select>
+              </div>
+
+              <!-- Descrizione -->
+              <div class="sc-field">
+                <label class="sc-label" :for="`ed-nc-desc-${nc.id_locale}`">Descrizione</label>
+                <textarea :id="`ed-nc-desc-${nc.id_locale}`" class="sc-textarea" x-model="nc.descrizione" @input="onCampoModificato()" rows="3"
+                          placeholder="Descrivi la non conformità…"></textarea>
+                <p class="sc-field__hint">
+                  <span x-text="lunghezzaDescrizione(nc)"></span> caratteri (min 20 consigliati)
+                </p>
+              </div>
+
+              <!-- Scadenza calcolata -->
+              <p class="ed-nc-scadenza" aria-live="polite">
+                <strong>Scadenza:</strong> <span x-text="scadenzaNcLeggibile(nc)"></span>
+              </p>
+            </li>
+          </template>
+        </ul>
+
+        <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="aggiungiNc()">
+          + Aggiungi non conformità
+        </button>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 4 — FIRME E FINALIZZAZIONE =========================== -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.FIRME" aria-label="Firme e finalizzazione">
+        <h3>Firme e finalizzazione</h3>
+
+        <!-- Riepilogo firme presenti -->
+        <section class="sc-card sc-stack" aria-labelledby="ed-firme-pres-titolo">
+          <h4 id="ed-firme-pres-titolo">Firme dei presenti</h4>
+          <ul role="list" class="sc-stack sc-stack--tight">
+            <template x-for="p in v.presenti" :key="p.id_locale">
+              <li class="sc-row sc-row--between ed-firma-riga">
+                <span x-text="p.nome_cognome"></span>
+                <span>
+                  <span x-show="statoFirmaPresente(p) === 'firmato'" x-cloak>✍️ Firmato</span>
+                  <span x-show="statoFirmaPresente(p) === 'rifiutato'" x-cloak>⚠️ Rifiutata</span>
+                  <button type="button" class="sc-btn sc-btn--secondary" x-show="statoFirmaPresente(p) === 'da_firmare'" x-cloak
+                          @click="apriFirma({tipo:'presente', presenteId:p.id_locale})"
+                          :aria-label="`Firma per ${p.nome_cognome}`">Firma ora</button>
+                </span>
+              </li>
+            </template>
+            <li x-show="v.presenti.length === 0" x-cloak class="sc-text-muted">Nessun presente aggiunto.</li>
+          </ul>
+        </section>
+
+        <!-- Firma redattore -->
+        <section class="sc-card sc-stack" aria-labelledby="ed-firma-red-titolo">
+          <h4 id="ed-firma-red-titolo">Firma del redattore</h4>
+          <p class="sc-field__hint sc-mt-0" x-text="`${v.redattore.nome_cognome || ''}${v.redattore.qualifica ? ' — ' + v.redattore.qualifica : ''}`"></p>
+
+          <!-- Anteprima firma redattore se presente -->
+          <template x-if="v.redattore.firma_png_base64">
+            <div class="ed-firma-red-anteprima">
+              <img :src="v.redattore.firma_png_base64" alt="Firma del redattore" class="ed-firma-red-anteprima__img">
+            </div>
+          </template>
+
+          <div class="sc-row sc-row--wrap">
+            <button type="button" class="sc-btn sc-btn--secondary" @click="usaFirmaPermanente()">Usa firma permanente</button>
+            <button type="button" class="sc-btn sc-btn--secondary" @click="apriFirma({tipo:'redattore'})">Firma ora</button>
+            <button type="button" class="sc-btn sc-btn--ghost" x-show="v.redattore.firma_png_base64" x-cloak @click="rimuoviFirmaRedattore()">Rimuovi</button>
+          </div>
+        </section>
+
+        <!-- Riepilogo -->
+        <section class="sc-card sc-stack sc-stack--tight" aria-labelledby="ed-riepilogo-titolo">
+          <h4 id="ed-riepilogo-titolo">Riepilogo</h4>
+          <div class="sc-row sc-row--between"><span class="sc-text-muted">Data</span><span x-text="riepilogo.data"></span></div>
+          <div class="sc-row sc-row--between"><span class="sc-text-muted">Cantiere</span><span x-text="riepilogo.cantiere || '—'"></span></div>
+          <div class="sc-row sc-row--between"><span class="sc-text-muted">Presenti</span>
+            <span><span x-text="riepilogo.nPresenti"></span> (<span x-text="riepilogo.nFirme"></span> firme, <span x-text="riepilogo.nRifiuti"></span> rifiuti)</span>
+          </div>
+          <div class="sc-row sc-row--between"><span class="sc-text-muted">Non conformità</span><span x-text="riepilogo.nNc"></span></div>
+        </section>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === ACTION BAR (sticky) ======================================= -->
+      <!-- Vive nell'editor per accedere allo stato; sticky in fondo via CSS. -->
+      <!-- =============================================================== -->
+      <div class="ed-actionbar">
+        <button type="button" class="sc-btn sc-btn--secondary" @click="indietro()"
+                x-show="stepCorrente > STEP.DATI" x-cloak>Indietro</button>
+        <span class="ed-actionbar__spacer"></span>
+        <button type="button" class="sc-btn sc-btn--primary" @click="avanti()"
+                x-show="stepCorrente < NUM_STEP"
+                :disabled="!completo(stepCorrente)" :aria-disabled="!completo(stepCorrente) ? 'true' : 'false'">Avanti</button>
+        <button type="button" class="sc-btn sc-btn--primary" @click="apriFinalizza()"
+                x-show="stepCorrente === NUM_STEP" x-cloak>Finalizza e invia</button>
+      </div>
+
+      <!-- =============================================================== -->
+      <!-- === MODAL: AGGIUNGI PRESENTE ================================== -->
+      <!-- =============================================================== -->
+      <template x-if="sheetPresenteAperto">
+        <div class="sc-overlay" @click.self="chiudiSheetPresente()">
+          <div class="sc-sheet" x-ref="sheetPresente" role="dialog" aria-modal="true" aria-labelledby="ed-sheet-titolo" tabindex="-1">
+            <div class="sc-sheet__header">
+              <h3 id="ed-sheet-titolo" class="sc-card__title">Aggiungi presente</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiSheetPresente()" aria-label="Chiudi">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+
+            <!-- Toggle modo (solo se c'è anagrafica) -->
+            <div class="sc-segmented" role="radiogroup" x-radiogroup aria-label="Modalità inserimento" x-show="anagrafica" x-cloak>
+              <button type="button" class="sc-segmented__option" role="radio" :aria-checked="modoInserimento==='anagrafica'?'true':'false'"
+                      :tabindex="modoInserimento==='anagrafica'?'0':'-1'" @click="modoInserimento='anagrafica'">Da anagrafica</button>
+              <button type="button" class="sc-segmented__option" role="radio" :aria-checked="modoInserimento==='manuale'?'true':'false'"
+                      :tabindex="modoInserimento==='manuale'?'0':'-1'" @click="modoInserimento='manuale'">Manuale</button>
+            </div>
+
+            <!-- DA ANAGRAFICA -->
+            <div class="sc-stack" x-show="modoInserimento === 'anagrafica'" x-cloak>
+              <div class="sc-field">
+                <label class="sc-label" for="ed-ricerca-pres">Cerca persona</label>
+                <input id="ed-ricerca-pres" class="sc-input" type="search" x-model="ricercaPresente" placeholder="Nome, qualifica, ente…">
+              </div>
+              <ul role="list" class="sc-stack sc-stack--tight ed-ricerca-risultati" aria-live="polite">
+                <template x-for="persona in personeAnagrafica" :key="persona.id">
+                  <li>
+                    <button type="button" class="sc-card ed-persona-opzione" @click="aggiungiDaAnagrafica(persona)">
+                      <span class="ed-presente__nome" x-text="persona.nome_cognome"></span>
+                      <span class="ed-presente__meta">
+                        <span x-text="persona.qualifica"></span>
+                        <template x-if="nomeImpresa(persona.impresa_id)"><span> · <span x-text="nomeImpresa(persona.impresa_id)"></span></span></template>
+                        <template x-if="persona.ente"><span> · <span x-text="persona.ente"></span></span></template>
+                      </span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="personeAnagrafica.length === 0" x-cloak class="sc-text-muted sc-text-center">Nessun risultato</li>
+              </ul>
+            </div>
+
+            <!-- MANUALE -->
+            <div class="sc-stack" x-show="modoInserimento === 'manuale'" x-cloak>
+              <div class="sc-field">
+                <label class="sc-label" for="ed-man-nome">Nome e cognome <span class="sc-label__required" aria-hidden="true">*</span></label>
+                <input id="ed-man-nome" class="sc-input" type="text" x-model="manuale.nome_cognome" aria-required="true">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label" for="ed-man-qual">Qualifica</label>
+                <input id="ed-man-qual" class="sc-input" type="text" x-model="manuale.qualifica">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label" for="ed-man-imp">Impresa</label>
+                <input id="ed-man-imp" class="sc-input" type="text" x-model="manuale.impresa">
+              </div>
+              <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="aggiungiManuale()"
+                      :disabled="!manuale.nome_cognome.trim()" :aria-disabled="!manuale.nome_cognome.trim() ? 'true':'false'">Aggiungi</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- =============================================================== -->
+      <!-- === MODAL: RIFIUTO FIRMA ====================================== -->
+      <!-- =============================================================== -->
+      <template x-if="modalRifiutoAperto">
+        <div class="sc-overlay" @click.self="chiudiRifiuto()">
+          <div class="sc-sheet" x-ref="modalRifiuto" role="dialog" aria-modal="true" aria-labelledby="ed-rifiuto-titolo" tabindex="-1">
+            <div class="sc-sheet__header">
+              <h3 id="ed-rifiuto-titolo" class="sc-card__title">Rifiuto della firma</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiRifiuto()" aria-label="Chiudi">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="sc-field">
+              <label class="sc-label" for="ed-rifiuto-motivo">Motivo del rifiuto <span class="sc-label__required" aria-hidden="true">*</span></label>
+              <textarea id="ed-rifiuto-motivo" class="sc-textarea" x-model="rifiutoMotivo" rows="3" aria-required="true"
+                        placeholder="Indica il motivo del rifiuto…"></textarea>
+            </div>
+            <div class="sc-row sc-row--between">
+              <button type="button" class="sc-btn sc-btn--secondary" @click="chiudiRifiuto()">Annulla</button>
+              <button type="button" class="sc-btn sc-btn--primary" @click="confermaRifiuto()"
+                      :disabled="!rifiutoMotivo.trim()" :aria-disabled="!rifiutoMotivo.trim()?'true':'false'">Conferma rifiuto</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- =============================================================== -->
+      <!-- === MODAL: CANVAS FIRMA ======================================= -->
+      <!-- =============================================================== -->
+      <template x-if="modalFirmaAperto">
+        <div class="sc-overlay" @click.self="chiudiFirma()">
+          <div class="sc-sheet" x-ref="modalFirma" role="dialog" aria-modal="true" aria-labelledby="ed-firma-titolo" tabindex="-1">
+            <div class="sc-sheet__header">
+              <h3 id="ed-firma-titolo" class="sc-card__title">Firma</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiFirma()" aria-label="Chiudi senza salvare">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="ed-firma-box">
+              <canvas x-ref="canvasFirma" class="ed-firma-canvas" role="img" aria-label="Area di firma. Disegna con il dito o con un pennino."></canvas>
+            </div>
+            <p class="sc-field__hint ed-firma-istruzione">Firma con il dito o con un pennino.</p>
+            <div class="sc-row sc-row--between ed-firma-azioni">
+              <button type="button" class="sc-btn sc-btn--secondary" @click="pulisciFirma()">Cancella</button>
+              <button type="button" class="sc-btn sc-btn--primary" @click="confermaFirma()"
+                      :disabled="firmaCanvasVuoto" :aria-disabled="firmaCanvasVuoto?'true':'false'">Conferma</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- =============================================================== -->
+      <!-- === MODAL: FINALIZZAZIONE ===================================== -->
+      <!-- =============================================================== -->
+      <template x-if="modalFinalizzaAperto">
+        <div class="sc-overlay" @click.self="chiudiFinalizza()">
+          <div class="sc-sheet" x-ref="modalFinalizza" role="alertdialog" aria-modal="true"
+               aria-labelledby="ed-finalizza-titolo" tabindex="-1"
+               @keydown.escape="chiudiFinalizza()">
+            <div class="sc-sheet__header">
+              <h3 id="ed-finalizza-titolo" class="sc-card__title">Finalizza e invia</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiFinalizza()" aria-label="Chiudi">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+
+            <!-- Caso: mancanze -> elenco con link allo step -->
+            <template x-if="mancanze.length > 0">
+              <div class="sc-stack">
+                <p id="ed-finalizza-desc-mancanze">Non puoi ancora finalizzare. Mancano:</p>
+                <ul role="list" class="sc-stack sc-stack--tight">
+                  <template x-for="(m, i) in mancanze" :key="i">
+                    <li>
+                      <button type="button" class="sc-btn sc-btn--ghost ed-mancanza" @click="vaiAMancanza(m.step)">
+                        <span x-text="m.messaggio"></span>
+                      </button>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </template>
+
+            <!-- Caso: tutto ok -> conferma invio -->
+            <template x-if="mancanze.length === 0">
+              <div class="sc-stack">
+                <p id="ed-finalizza-desc-ok">
+                  Stai per finalizzare il verbale. Dopo l'invio non potrai più modificarlo.
+                  Il file verrà condiviso verso l'app per il caricamento sul cloud condiviso.
+                </p>
+                <div class="sc-row sc-row--between">
+                  <button type="button" class="sc-btn sc-btn--secondary" @click="chiudiFinalizza()">Annulla</button>
+                  <button type="button" class="sc-btn sc-btn--primary" @click="finalizzaEInvia()"
+                          :disabled="invioInCorso" :aria-disabled="invioInCorso?'true':'false'">
+                    <span x-show="!invioInCorso">Finalizza e invia</span>
+                    <span x-show="invioInCorso" x-cloak>Invio in corso…</span>
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+    </div>
+  </template>
+</div>
