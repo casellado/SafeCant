@@ -519,6 +519,12 @@ export default function editorVerbale() {
         announce('Nessuna firma permanente impostata. Firma al momento oppure impostala nelle impostazioni.', 'assertive');
         return;
       }
+      // Aggiorna l'intera identità del redattore dalle impostazioni correnti, non
+      // solo la firma. Risolve il caso in cui la bozza era stata creata quando
+      // nome/qualifica erano ancora vuoti nelle impostazioni (causa 1 del bug
+      // "compilatore vuoto": usaFirmaPermanente leggeva imp ma scriveva solo la firma).
+      this.v.redattore.nome_cognome = imp.nome_cognome || '';
+      this.v.redattore.qualifica = imp.qualifica || '';
       this.v.redattore.firma_png_base64 = imp.firma_permanente_png_base64;
       this.v.redattore.timestamp_firma = timestampIso();
       this.v.redattore.tipo_firma = 'permanente';

@@ -149,11 +149,11 @@ export function generaCorpoHtmlSopralluogo(v) {
       parti.push('<article class="nc">');
       parti.push(`<h3>NC ${i + 1} — Livello: ${escapeHtml((NC_LIVELLO_LABEL[nc.livello] || nc.livello || '').toUpperCase())}</h3>`);
       if (nc.scadenza_calcolata) {
-        // La scadenza può essere una data (gg) o un datetime (24h): formattiamo
-        // la sola data se è in formato ISO date, altrimenti lasciamo il valore.
-        const sc = /^\d{4}-\d{2}-\d{2}$/.test(nc.scadenza_calcolata)
-          ? formattaDataIt(nc.scadenza_calcolata)
-          : nc.scadenza_calcolata;
+        // La scadenza è ISO date (AAAA-MM-GG) per grave/media/lieve, o ISO datetime
+        // per gravissima. In entrambi i casi estraiamo i primi 10 caratteri (la parte
+        // data) e la formattiamo in italiano. Risolve il bug per cui la scadenza
+        // gravissima appariva grezza ("2026-06-01T00:00:00.000Z") invece di "01/06/2026".
+        const sc = formattaDataIt(nc.scadenza_calcolata.slice(0, 10));
         parti.push(`<p><strong>Scadenza:</strong> ${escapeHtml(sc)}</p>`);
       }
       parti.push(`<p><strong>Descrizione:</strong> ${escapeHtmlMultiline(nc.descrizione || '')}</p>`);
@@ -261,7 +261,7 @@ export function componiFileInterscambio(v, opzioni = {}) {
       id_locale: nc.id_locale,
       livello: nc.livello,
       descrizione: nc.descrizione || '',
-      impresa_id: nc.impresa_id || '',
+      impresa_id: nc.impresa_id || null,
       scadenza_calcolata: nc.scadenza_calcolata || null,
     })),
 

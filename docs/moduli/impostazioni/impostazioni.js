@@ -103,7 +103,10 @@ export default function impostazioni() {
      * @returns {void}
      */
     destroy() {
-      if (this._salvaDebounced) this._salvaDebounced.cancel();
+      // flush invece di cancel: se c'è un salvataggio pendente (l'utente ha digitato
+      // nome/qualifica e navigato via prima degli 800ms), lo eseguiamo subito così i
+      // dati non vengono persi. È la radice della causa 2 del bug "compilatore vuoto".
+      if (this._salvaDebounced) this._salvaDebounced.flush();
       if (this._releaseTrap) { this._releaseTrap(); this._releaseTrap = null; }
       this._smontaCanvasFirma();
     },

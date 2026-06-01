@@ -355,5 +355,15 @@ export function debounce(fn, wait) {
   debounced.cancel = () => {
     if (timer) { clearTimeout(timer); timer = null; }
   };
+  // flush: esegue subito la chiamata pendente (se presente) e azzera il timer.
+  // Usato da destroy() dei componenti per non perdere l'ultimo salvataggio quando
+  // l'utente naviga via prima che il debounce scatti.
+  debounced.flush = function (...args) {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+      fn.apply(this, args);
+    }
+  };
   return debounced;
 }
