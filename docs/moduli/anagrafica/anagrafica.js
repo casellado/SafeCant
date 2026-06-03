@@ -34,8 +34,11 @@ import {
 import { announce } from '../../shared/a11y.js';
 import { formattaDataIt, isCantiereIdValido } from '../../shared/utils.js';
 
-/** Versione schema supportata per il file anagrafica (contratto 4.1). */
-const SCHEMA_VERSION_SUPPORTATA = '1.0';
+/**
+ * Versioni schema anagrafica accettate da SafeCant.
+ * SafeHub è la fonte di verità: si aggiunge qui quando SafeHub rilascia una nuova versione.
+ */
+const SCHEMA_VERSION_SUPPORTATE = new Set(['1.0', '2.0']);
 
 /**
  * Factory del componente Anagrafica.
@@ -156,13 +159,14 @@ export default function anagrafica() {
     },
 
     /**
-     * Valida il file contro lo schema del contratto (4.1 / 10.1). Lancia un
-     * Error con messaggio umano alla prima violazione. Controlli:
-     *  - tipo_file corretto
-     *  - schema_version supportata
-     *  - cantiere_id presente e nel formato CZ\d+
-     *  - imprese, lavoratori, mezzi_attrezzature sono array
-     * Le altre collezioni (persone_*) sono tollerate assenti → trattate come [].
+     * Valida il file anagrafica. Controlla i campi di identità minimi; NON richiede
+     * più che le collezioni siano array non-null: il contratto v2.0 ammette null su
+     * tutto tranne id e lotto_id. Le difese ?? [] vivono in _normalizza.
+     *
+     * Differenze v1.0 vs v2.0:
+     *  - v1.0: cantiere_id alla radice del JSON.
+     *  - v2.0: id cantiere in lotto.id; variante:'leggera' obbligatoria.
+     *
      * @param {object} dati
      * @returns {void}
      * @throws {Error}
@@ -174,47 +178,107 @@ export default function anagrafica() {
       if (dati.tipo_file !== 'anagrafica_cantiere') {
         throw new Error('Questo file non è un\'anagrafica di cantiere.');
       }
-      if (dati.schema_version !== SCHEMA_VERSION_SUPPORTATA) {
+      if (!SCHEMA_VERSION_SUPPORTATE.has(dati.schema_version)) {
         throw new Error(
           `Versione anagrafica non supportata (${dati.schema_version ?? 'assente'}). Chiedi al PO un file aggiornato.`
         );
       }
-      if (!isCantiereIdValido(dati.cantiere_id)) {
-        throw new Error('Codice cantiere mancante o non valido nel file.');
+      // La variante 'leggera' è obbligatoria solo per v2.0 (in v1.0 il campo non esiste).
+      if (dati.schema_version === '2.0' && dati.variante !== 'leggera') {
+        throw new Error(
+          `Variante anagrafica non supportata (${dati.variante ?? 'assente'}). SafeCant accetta solo la variante 'leggera'.`
+        );
       }
-      for (const campo of ['imprese', 'lavoratori', 'mezzi_attrezzature']) {
-        if (!Array.isArray(dati[campo])) {
-          throw new Error(`Il file è incompleto: manca la sezione "${campo}".`);
-        }
+      // In v2.0 il cantiere_id è in lotto.id; in v1.0 è alla radice.
+      const cantId = dati.schema_version === '2.0' ? dati.lotto?.id : dati.cantiere_id;
+      if (!isCantiereIdValido(cantId)) {
+        throw new Error('Codice cantiere mancante o non valido nel file.');
       }
     },
 
     /**
-     * Normalizza il file validato in record IDB. Punto chiave: lo store usa
-     * `cantiereId` come keyPath mentre il file usa `cantiere_id`; mappiamo qui,
-     * preservando l'intero contenuto originale. Le collezioni persone_* assenti
-     * diventano array vuoti per un consumo uniforme a valle (editor, ricerca).
-     * @param {object} dati
-     * @returns {object} Record pronto per idb.salvaAnagrafica.
+     * Normalizza il file validato in record IDB compatibile con lo schema interno
+     * di SafeCant, gestendo le differenze tra v1.0 e v2.0:
+     *
+     *  - cantiereId: v2.0 → lotto.id; v1.0 → cantiere_id (radice).
+     *  - persone (committente, terzi, lavoratori): v2.0 ha nome+cognome separati;
+     *    v1.0 aveva nome_cognome unito. Si compone e si conserva il campo unificato.
+     *  - imprese: v2.0 usa ragioneSociale (camelCase); si aggiunge alias ragione_sociale
+     *    così tutti i consumatori interni (editor, accordion) funzionano invariati.
+     *  - lavoratori: il mestiere si chiama 'mansione' in v2.0 (non 'qualifica');
+     *    si aggiunge alias qualifica.
+     *  - mezzi/attrezzature: v2.0 li ha separati; vengono combinati in
+     *    mezzi_attrezzature per l'accordion esistente e conservati anche distinti.
+     *  - noli: nuovo in v2.0, conservato per uso futuro.
+     *  - Tutto ?? [] / ?? '' / ?? null: il contratto v2.0 ammette null ovunque.
+     *
+     * @param {object} dati  File JSON già validato da _validaSchema.
+     * @returns {object}     Record pronto per idb.salvaAnagrafica.
      */
     _normalizza(dati) {
+      const isV2 = dati.schema_version === '2.0';
+
+      // Il keyPath IDB viene da posti diversi nelle due versioni.
+      const cantiereId = isV2 ? (dati.lotto?.id ?? '') : (dati.cantiere_id ?? '');
+
+      // data_versione: v1.0 ha il campo dedicato; v2.0 usa generato_il (slice data).
+      const data_versione = dati.data_versione
+        ?? (dati.generato_il ? dati.generato_il.slice(0, 10) : '');
+
+      // Normalizza un record persona con nome+cognome separati (v2.0) oppure
+      // nome_cognome già unito (v1.0). Gestisce anche 'mansione' dei lavoratori:
+      // in v2.0 il mestiere si chiama mansione; l'editor usa 'qualifica'.
+      const normalizzaPersona = (r) => ({
+        ...r,
+        nome_cognome: r.nome_cognome                                     // v1.0: già unito
+          ?? ((r.nome ?? '') + ' ' + (r.cognome ?? '')).trim(),           // v2.0: componi
+        qualifica: r.qualifica ?? r.mansione ?? '',                       // mansione → qualifica
+      });
+
+      // Normalizza un record impresa: aggiunge alias snake_case per ragione_sociale
+      // (v2.0 usa ragioneSociale camelCase; v1.0 usava già ragione_sociale).
+      const normalizzaImpresa = (r) => ({
+        ...r,
+        ragione_sociale: r.ragioneSociale ?? r.ragione_sociale ?? '',
+      });
+
       return {
-        // keyPath dello store: derivato da cantiere_id del file.
-        cantiereId: dati.cantiere_id,
-        // Conserviamo i campi canonici del file per riferimento/futura esportazione.
+        // === keyPath e identificatori ===
+        cantiereId,
+        cantiere_id: cantiereId,            // alias per retrocompat consumatori interni
         schema_version: dati.schema_version,
         tipo_file: dati.tipo_file,
-        cantiere_id: dati.cantiere_id,
-        data_versione: dati.data_versione ?? '',
+        variante: dati.variante ?? null,    // 'leggera' per v2.0; null per v1.0
+
+        // === metadati generazione ===
+        data_versione,
         generato_il: dati.generato_il ?? null,
-        metadati_cantiere: dati.metadati_cantiere ?? null,
-        // Collezioni: garantiamo sempre array (anche se assenti nel file).
-        imprese: dati.imprese ?? [],
-        lavoratori: dati.lavoratori ?? [],
-        mezzi_attrezzature: dati.mezzi_attrezzature ?? [],
-        persone_committente: dati.persone_committente ?? [],
-        persone_terzi: dati.persone_terzi ?? [],
-        // Metadati locali di importazione (utili nella UI "importata il...").
+        generato_da: dati.generato_da ?? null,
+        generato_da_versione: dati.generato_da_versione ?? null,
+
+        // === struttura cantiere ===
+        lotto: dati.lotto ?? null,                    // v2.0: intero oggetto lotto
+        metadati_cantiere: dati.metadati_cantiere ?? null,  // v1.0 compat
+
+        // === collezioni (8 in v2.0, 5 in v1.0 — tutte difese con ?? []) ===
+        imprese: (dati.imprese ?? []).map(normalizzaImpresa),
+        lavoratori: (dati.lavoratori ?? []).map(normalizzaPersona),
+
+        // mezzi e attrezzature: v1.0 → unica collezione; v2.0 → due separate.
+        // L'accordion 'Mezzi e attrezzature' usa sempre 'mezzi_attrezzature'.
+        mezzi_attrezzature: isV2
+          ? [...(dati.mezzi ?? []), ...(dati.attrezzature ?? [])]
+          : (dati.mezzi_attrezzature ?? []),
+        // Conservate anche distinte per uso futuro (v1.0: entrambe []).
+        mezzi: dati.mezzi ?? [],
+        attrezzature: dati.attrezzature ?? [],
+
+        noli: dati.noli ?? [],
+
+        persone_committente: (dati.persone_committente ?? []).map(normalizzaPersona),
+        persone_terzi: (dati.persone_terzi ?? []).map(normalizzaPersona),
+
+        // === metadati locali importazione ===
         importata_il: new Date().toISOString(),
       };
     },

@@ -207,14 +207,16 @@ export function isDataIsoValida(value) {
 }
 
 /**
- * Vero se il codice cantiere rispetta il formato opaco del contratto (sez. 3.1 /
- * 10.1): `CZ` seguito da una o più cifre. Mai descrittivo (principio di
- * riservatezza). Usato in validazione import anagrafica.
+ * Vero se il codice cantiere è una stringa alfanumerica non vuota (opzione B).
+ * La regex originale /^CZ\d+$/ era troppo stretta: SafeHub è la fonte di verità
+ * e può produrre ID in formati diversi (CZ400, zz556, ecc.). SafeCant non impone
+ * il proprio formato interno. Ammette lettere, cifre, trattini e underscore.
+ * Usato nella validazione dell'import anagrafica.
  * @param {*} value
  * @returns {boolean}
  */
 export function isCantiereIdValido(value) {
-  return typeof value === 'string' && /^CZ\d+$/.test(value);
+  return typeof value === 'string' && /^[A-Za-z0-9_-]+$/.test(value);
 }
 
 /* ===========================================================================

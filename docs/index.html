@@ -981,8 +981,10 @@
             <li class="ana-voce">
               <span class="ana-voce__nome" x-text="mez.tipologia"></span>
               <span class="ana-voce__meta">
-                <template x-if="mez.marca || mez.modello">
-                  <span x-text="[mez.marca, mez.modello].filter(Boolean).join(' ')"></span>
+                <!-- marca/modello per i mezzi; descrizione per le attrezzature
+                     (in v2.0 le attrezzature non hanno marca/modello). -->
+                <template x-if="mez.marca || mez.modello || mez.descrizione">
+                  <span x-text="mez.descrizione || [mez.marca, mez.modello].filter(Boolean).join(' ')"></span>
                 </template>
                 <template x-if="nomeImpresa(mez.impresa_id)">
                   <span> · <span x-text="nomeImpresa(mez.impresa_id)"></span></span>

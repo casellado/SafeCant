@@ -33,6 +33,7 @@ import {
   getVerbale,
   salvaVerbale,
   getAnagrafica,
+  getTutteAnagrafiche,
   getImpostazioni,
   accodaInvio,
   rimuoviDaCoda,
@@ -158,9 +159,23 @@ export default function editorVerbale() {
      */
     async _nuovoVerbale() {
       const imp = (await getImpostazioni()) ?? {};
+
+      // Fallback cantiere_id a cascata:
+      // 1. Impostazioni utente (cantiere_default configurato manualmente)
+      // 2. Unica anagrafica importata in IDB (se c'è ne una sola, è quella del cantiere corrente)
+      // 3. Stringa vuota (utente dovrà configurare)
+      // Risolve il bug "cantiere_id vuoto → doppio underscore nel nome file".
+      let cantiereId = imp.cantiere_default || '';
+      if (!cantiereId) {
+        try {
+          const anagrafiche = await getTutteAnagrafiche();
+          if (anagrafiche.length === 1) cantiereId = anagrafiche[0].cantiereId || '';
+        } catch (_) { /* non critico: si procede con '' */ }
+      }
+
       this.v = {
         id: generaIdVerbale(),
-        cantiereId: imp.cantiere_default || '',
+        cantiereId,
         stato: 'bozza',
         created_at: timestampIso(),
         modified_at: timestampIso(),
