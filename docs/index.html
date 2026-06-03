@@ -119,6 +119,23 @@
       </div>
 
       <!--
+        Anagrafica cantiere: visibile tranne quando si è GIÀ nell'anagrafica.
+        Icona libro = registro/directory, coerente col contenuto (imprese, persone).
+      -->
+      <button
+        type="button"
+        class="sc-iconbtn"
+        x-show="rottaCorrente !== 'anagrafica'"
+        @click="vaiA('anagrafica')"
+        aria-label="Anagrafica cantiere"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 19.5A2.5 2.5 0 016.5 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <!--
         Ingranaggio impostazioni: sempre presente tranne quando si è GIÀ nelle
         impostazioni. Apre la vista impostazioni via router.
       -->
