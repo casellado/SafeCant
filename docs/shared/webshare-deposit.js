@@ -130,7 +130,11 @@ export function generaCorpoHtmlSopralluogo(v) {
       if (p.firmato && firmaPng) {
         // L'attributo src con data URL è sicuro: il base64 è prodotto dal canvas,
         // non è testo utente; l'alt invece va escapato.
-        firma = `<img src="${firmaPng}" alt="Firma di ${nome}">`;
+        // height fisso per uniformità nel documento Word: tutte le firme alla
+        // stessa altezza di scrittura (≈16 mm / 45 pt su A4), larghezza auto
+        // per mantenere le proporzioni senza deformare. Doppio attributo+style
+        // per compatibilità con le diverse versioni dell'html-module docxtemplater.
+        firma = `<img src="${firmaPng}" alt="Firma di ${nome}" height="60" style="height:60px;width:auto;">`;
       } else if (p.rifiuto_firma) {
         firma = `Firma rifiutata${p.motivo_rifiuto ? ` (${escapeHtml(p.motivo_rifiuto)})` : ''}`;
       }
@@ -178,7 +182,8 @@ export function generaCorpoHtmlSopralluogo(v) {
     if (v.redattore.qualifica) parti.push(` — ${escapeHtml(v.redattore.qualifica)}`);
     parti.push('</p>');
     if (v.redattore.firma_png_base64) {
-      parti.push(`<img src="${v.redattore.firma_png_base64}" alt="Firma del redattore">`);
+      // Stessa altezza fissa delle firme dei presenti: uniformità nel documento.
+      parti.push(`<img src="${v.redattore.firma_png_base64}" alt="Firma del redattore" height="60" style="height:60px;width:auto;">`);
     }
     parti.push('</section>');
   }
