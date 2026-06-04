@@ -427,9 +427,10 @@
         delle impostazioni sovrascriva la scelta. destroy() → flush() salva il
         debounce pendente prima dello smontaggio.
       -->
+      <!-- x-if DEVE stare su <template> (requisito Alpine): la <section> è il figlio unico. -->
+      <template x-if="rottaCorrente === 'editor'">
       <section
         data-route="editor"
-        x-if="rottaCorrente === 'editor'"
         aria-label="Editor verbale di sopralluogo"
       >
 <!-- ── moduli/editor-verbale/editor.html ───────────────────────────────── -->
@@ -908,6 +909,7 @@
 </div>
 <!-- ── /moduli/editor-verbale/editor.html ──────────────────────────────── -->
       </section>
+      </template>
 
       <!-- VISTA: ANAGRAFICA ---------------------------------------------- -->
       <section

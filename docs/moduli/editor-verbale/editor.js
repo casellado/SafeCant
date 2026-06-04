@@ -206,7 +206,11 @@ export default function editorVerbale() {
           tipo_firma: null,
         },
       };
-      await salvaVerbale(this.v);
+      // JSON round-trip: this.v è un Proxy reattivo Alpine; i suoi array
+      // annidati (presenti, nc_drafts) sono anch'essi proxied e non sono
+      // structured-cloneable da IDB. Serializzare a stringa e riparsare
+      // produce un oggetto piano puro, clonabile senza errori.
+      await salvaVerbale(JSON.parse(JSON.stringify(this.v)));
     },
 
     /**
@@ -232,7 +236,7 @@ export default function editorVerbale() {
     async _persisti() {
       if (!this.v) return;
       try {
-        await salvaVerbale(this.v);
+        await salvaVerbale(JSON.parse(JSON.stringify(this.v)));
       } catch (err) {
         console.error('[editor] Salvataggio bozza fallito:', err);
         announce('Non è stato possibile salvare la bozza. Verifica lo spazio sul dispositivo.', 'assertive');
