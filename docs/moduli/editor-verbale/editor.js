@@ -143,7 +143,10 @@ export default function editorVerbale() {
      * @returns {void}
      */
     destroy() {
-      if (this._salvaDebounced) this._salvaDebounced.cancel();
+      // flush invece di cancel: con x-if il componente viene smontato a ogni
+      // navigazione; flush garantisce che l'ultimo salvataggio pendente (digitato
+      // < 1s prima di uscire) venga eseguito prima della teardown.
+      if (this._salvaDebounced) this._salvaDebounced.flush();
       this._smontaCanvas();
       if (this._releaseTrap) { this._releaseTrap(); this._releaseTrap = null; }
     },

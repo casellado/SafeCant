@@ -420,13 +420,27 @@
       </section>
 
       <!-- VISTA: EDITOR VERBALE ------------------------------------------ -->
+      <!--
+        x-if (non x-show): il componente editorVerbale viene smontato e rimontato
+        a ogni navigazione. Questo garantisce che init() giri con l'editorIntent
+        FRESCO del picker (cantiereId scelto), evitando che il cantiere_default
+        delle impostazioni sovrascriva la scelta. destroy() → flush() salva il
+        debounce pendente prima dello smontaggio.
+      -->
       <section
         data-route="editor"
-        x-show="rottaCorrente === 'editor'"
+        x-if="rottaCorrente === 'editor'"
         aria-label="Editor verbale di sopralluogo"
       >
 <!-- ── moduli/editor-verbale/editor.html ───────────────────────────────── -->
 <div x-data="editorVerbale">
+  <!-- Indicatore di caricamento: visibile durante il gap async di init() (~50-150ms)
+       mentre _nuovoVerbale/_caricaVerbale interroga IDB e v è ancora null.
+       Evita il flash di schermata vuota al montaggio del componente. -->
+  <div x-show="!v" class="sc-empty">
+    <p class="sc-text-muted">Caricamento…</p>
+  </div>
+
   <!-- Guardia: se per qualche motivo non c'è verbale, non rompere il render. -->
   <template x-if="v">
     <div class="ed-shell">

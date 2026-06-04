@@ -23,6 +23,13 @@
   ============================================================================
 -->
 <div x-data="editorVerbale">
+  <!-- Indicatore di caricamento: visibile durante il gap async di init() (~50-150ms)
+       mentre _nuovoVerbale/_caricaVerbale interroga IDB e v è ancora null.
+       Evita il flash di schermata vuota al montaggio del componente. -->
+  <div x-show="!v" class="sc-empty">
+    <p class="sc-text-muted">Caricamento…</p>
+  </div>
+
   <!-- Guardia: se per qualche motivo non c'è verbale, non rompere il render. -->
   <template x-if="v">
     <div class="ed-shell">
