@@ -94,6 +94,31 @@
   background: var(--sc-danger-100);
 }
 
+/* ----- Picker di selezione cantiere ----------------------------------------
+   Lista di voci-bottone nel modal. Ogni voce occupa tutta la larghezza ed è
+   toccabile come una card, con hover che segnala l'interattività. */
+.cru-picker-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-3);
+}
+
+.cru-picker-voce {
+  display: block;
+  width: 100%;
+  text-align: start;
+  cursor: pointer;
+  font-weight: var(--sc-weight-semibold);
+  font-size: var(--sc-text-base);
+}
+.cru-picker-voce:hover,
+.cru-picker-voce:focus-visible {
+  background: var(--sc-color-surface-alt);
+}
+
 /* ----- Corpo anteprima (dentro il modal) -----------------------------------
    Tipografia di lettura per il riepilogo. Gli heading generati (h4/h5) e i
    paragrafi ricevono un ritmo verticale leggibile. Il contenuto arriva da

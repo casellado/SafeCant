@@ -31,6 +31,7 @@ import {
   getVerbaliOrdinati,
   eliminaVerbale,
   getDaInviare,
+  getTutteAnagrafiche,
 } from '../../shared/idb.js';
 import { announce, trapFocus } from '../../shared/a11y.js';
 import { formattaDataIt, tronca, escapeHtml } from '../../shared/utils.js';
@@ -59,9 +60,14 @@ export default function cruscotto() {
     /** Invio da coda in corso (disabilita il bottone, evita doppio invio). */
     codaInvioInCorso: false,
 
+    /** Picker di selezione cantiere: lista anagrafiche in IDB. */
+    pickerAperto: false,
+    anagrafichePicker: [],
+
     /* --- Riferimenti per teardown --- */
     _releaseTrapElimina: null,
     _releaseTrapAnteprima: null,
+    _releaseTrapPicker: null,
 
     /* ===================================================================
      * LIFECYCLE
@@ -94,6 +100,7 @@ export default function cruscotto() {
       if (this._onHash) window.removeEventListener('hashchange', this._onHash);
       if (this._releaseTrapElimina) this._releaseTrapElimina();
       if (this._releaseTrapAnteprima) this._releaseTrapAnteprima();
+      if (this._releaseTrapPicker) this._releaseTrapPicker();
     },
 
     /**
@@ -215,18 +222,70 @@ export default function cruscotto() {
      * =================================================================== */
 
     /**
-     * Avvia un nuovo verbale: deposita l'intento nello store e va all'editor.
-     * Richiede che l'utente abbia configurato nome/qualifica (è il redattore):
-     * senza, lo indirizziamo alle impostazioni con un annuncio chiaro.
-     * @returns {void}
+     * Avvia un nuovo verbale. Prima controlla che il redattore sia configurato,
+     * poi carica le anagrafiche in IDB:
+     *  - 0 anagrafiche → naviga all'editor senza picker (presenti solo manuali).
+     *  - 1+ anagrafiche → mostra il picker di selezione cantiere; l'editor parte
+     *    solo dopo la scelta, con cantiereId valorizzato nell'intent.
+     * Mostrare il picker SEMPRE (anche con 1 sola anagrafica) è intenzionale:
+     * l'ispettore deve sempre confermare il cantiere per evitare errori di attribuzione.
+     * @returns {Promise<void>}
      */
-    nuovoSopralluogo() {
+    async nuovoSopralluogo() {
       if (!this.$store.app.configurato) {
         announce('Prima di creare un verbale, imposta nome e qualifica nelle impostazioni.', 'assertive');
         window.location.hash = 'impostazioni';
         return;
       }
-      this.$store.app.editorIntent = { modo: 'nuovo', verbaleId: null };
+
+      let anagrafiche = [];
+      try {
+        anagrafiche = await getTutteAnagrafiche();
+      } catch (_) { /* se IDB non risponde, procede senza picker */ }
+
+      if (anagrafiche.length === 0) {
+        // Nessuna anagrafica: l'editor parte con cantiereId vuoto (presenti manuali).
+        announce('Nessuna anagrafica importata: i presenti andranno inseriti manualmente.');
+        this.$store.app.editorIntent = { modo: 'nuovo', verbaleId: null, cantiereId: '' };
+        window.location.hash = 'editor';
+        return;
+      }
+
+      // 1+ anagrafiche: mostra sempre il picker così il cantiere è scelto esplicitamente.
+      this.anagrafichePicker = anagrafiche;
+      this.pickerAperto = true;
+      this.$nextTick(() => {
+        const dialog = this.$refs.modalPickerCantiere;
+        if (dialog) this._releaseTrapPicker = trapFocus(dialog, { onEscape: () => this.chiudiPickerCantiere() });
+      });
+    },
+
+    /**
+     * Etichetta leggibile di una voce del picker: "CZ400 — Lotto 2" se il nome
+     * del lotto è disponibile, altrimenti solo il cantiereId.
+     * @param {object} a  Record anagrafica da IDB.
+     * @returns {string}
+     */
+    etichettaPicker(a) {
+      return (a.lotto?.nome) ? `${a.cantiereId} — ${a.lotto.nome}` : a.cantiereId;
+    },
+
+    /** Chiude il picker senza avviare il sopralluogo. */
+    chiudiPickerCantiere() {
+      this.pickerAperto = false;
+      if (this._releaseTrapPicker) { this._releaseTrapPicker(); this._releaseTrapPicker = null; }
+    },
+
+    /**
+     * Conferma la scelta del cantiere e avvia il sopralluogo. Il cantiereId scelto
+     * finisce nell'intent → _nuovoVerbale lo usa → getAnagrafica lo trova →
+     * 'Da anagrafica' compare nello Step 2.
+     * @param {string} cantiereId
+     * @returns {void}
+     */
+    selezionaCantiereEAvvia(cantiereId) {
+      this.chiudiPickerCantiere();
+      this.$store.app.editorIntent = { modo: 'nuovo', verbaleId: null, cantiereId };
       window.location.hash = 'editor';
     },
 

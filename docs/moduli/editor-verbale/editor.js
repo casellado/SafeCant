@@ -127,7 +127,8 @@ export default function editorVerbale() {
       if (intent && intent.modo === 'modifica' && intent.verbaleId) {
         await this._caricaVerbale(intent.verbaleId);
       } else {
-        await this._nuovoVerbale();
+        // Passa il cantiereId scelto nel picker; '' se non presente (0 anagrafiche).
+        await this._nuovoVerbale(intent?.cantiereId ?? '');
       }
 
       // Anagrafica del cantiere del verbale, per la ricerca presenti.
@@ -157,15 +158,19 @@ export default function editorVerbale() {
      * successivo aggiorna un record esistente.
      * @returns {Promise<void>}
      */
-    async _nuovoVerbale() {
+    /**
+     * Crea una nuova bozza. Il cantiereId viene da una cascata di sorgenti:
+     *  1. Intent (dal picker di selezione cantiere nel cruscotto) — priorità massima.
+     *  2. cantiere_default nelle impostazioni utente.
+     *  3. Unica anagrafica in IDB (rete di sicurezza).
+     *  4. Stringa vuota (nessuna anagrafica, presenti solo manuali).
+     * @param {string} [cantiereIdDaIntent='']  cantiereId scelto nel picker.
+     * @returns {Promise<void>}
+     */
+    async _nuovoVerbale(cantiereIdDaIntent = '') {
       const imp = (await getImpostazioni()) ?? {};
 
-      // Fallback cantiere_id a cascata:
-      // 1. Impostazioni utente (cantiere_default configurato manualmente)
-      // 2. Unica anagrafica importata in IDB (se c'è ne una sola, è quella del cantiere corrente)
-      // 3. Stringa vuota (utente dovrà configurare)
-      // Risolve il bug "cantiere_id vuoto → doppio underscore nel nome file".
-      let cantiereId = imp.cantiere_default || '';
+      let cantiereId = cantiereIdDaIntent || imp.cantiere_default || '';
       if (!cantiereId) {
         try {
           const anagrafiche = await getTutteAnagrafiche();
