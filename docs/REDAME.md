@@ -186,3 +186,29 @@ l'utente caricherà poi manualmente sul cloud.
 
 *SafeCant fa parte dell'ecosistema SafeHub. Questo repository contiene
 esclusivamente l'app operativa da campo.*
+
+---
+
+## Note aperte e prossimi passi
+
+> Aggiornato al tag `v1.0.0-integrazione-safehub` (2026-06-04).
+
+### Minore — non bloccante
+
+- **manifest.json**: due warning in console (`'action'` e `'share_target'`
+  — property `action` fuori scope/invalida per la specifica PWA corrente).
+  Pre-esistenti, non legati all'integrazione con SafeHub v2.0. Da sistemare
+  nella prossima tornata di ritocchi PWA, non urgente.
+
+### Prossimo blocco (lato SafeHub)
+
+- **Export facilitato di più anagrafiche**: un ispettore segue N cantieri;
+  il CSE deve poter esportare comodamente N anagrafiche distinte (lato gemello
+  del multi-cantiere già gestito qui). Da implementare in SafeHub Archivio.
+
+### Tema storage (da discutere)
+
+- **Cartella di lavoro locale + cloud solo per scambio e backup**: definire
+  la convenzione operativa — cartella locale condivisa come area di lavoro,
+  OneDrive (o equivalente) usato solo per il deposit dei file di interscambio
+  SafeCant e per il backup manuale. Da allineare con il flusso SafeHub.
