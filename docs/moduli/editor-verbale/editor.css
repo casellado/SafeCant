@@ -45,15 +45,12 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch; /* scroll fluido su iOS */
-  scrollbar-width: none;             /* Firefox: nasconde la barra */
+  min-width: 0; /* permette la compressione nella colonna flex del parent */
 }
-.ed-stepper__list::-webkit-scrollbar { display: none; } /* WebKit: idem */
 
 .ed-stepper__item {
-  flex: 1 1 auto;
-  min-width: max-content;
+  flex: 1 1 0;  /* parti uguali, base 0: nessuna larghezza rigida */
+  min-width: 0; /* consente la compressione sotto il max-content */
 }
 
 /* Ogni step è un bottone: numero/spunta + label. Touch target garantito. */
@@ -118,9 +115,17 @@
   color: var(--sc-color-text-muted);
 }
 
-/* La label dello step si nasconde su schermi molto stretti, lasciando il numero;
-   il nome resta comunque annunciato dallo screen reader. */
-@media (max-width: 400px) {
+/* Etichetta: troncamento ellissi quando lo spazio si riduce.
+   white-space: nowrap è ereditato da .ed-stepper__btn. */
+.ed-stepper__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0; /* flex item può scendere sotto la dimensione del testo */
+}
+
+/* Su telefoni stretti (< 480px) l'ellissi lascerebbe ~2 caratteri visibili:
+   si nasconde la label e resta il solo numero, annunciato dallo screen reader. */
+@media (max-width: 479px) {
   .ed-stepper__label { display: none; }
 }
 
