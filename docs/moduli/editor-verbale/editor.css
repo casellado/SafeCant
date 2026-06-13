@@ -16,6 +16,18 @@
   padding-bottom: 5rem;
 }
 
+/* Banner sola lettura: visibile quando un verbale 'inviato' è aperto in
+   consultazione. Usa il colore warning per non allarmare, ma rendere evidente. */
+.ed-sola-lettura {
+  padding: var(--sc-space-2) var(--sc-space-4);
+  background: var(--sc-warning-700);
+  color: #ffffff;
+  border-radius: var(--sc-radius-sm);
+  font-size: var(--sc-text-sm);
+  font-weight: var(--sc-weight-semibold);
+  text-align: center;
+}
+
 /* ----- Stepper -------------------------------------------------------------
    Sticky sotto l'appbar. Su mobile la lista scorre orizzontalmente se i 4 step
    non entrano: meglio uno scroll controllato che label tagliate. */
@@ -250,4 +262,210 @@
 .ed-mancanza::before {
   content: '→';
   margin-inline-end: var(--sc-space-2);
+}
+
+/* ----- Anteprima pre-firma -------------------------------------------------
+   Contenitore scrollabile del corpo_html. Altezza fissa così iPad può scorrere
+   senza che la card si allunghi a tutto schermo. tabindex="0" rende la regione
+   focusabile da tastiera per utenti che scorrono senza tocco. */
+.ed-anteprima-scroll {
+  max-height: 55vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch; /* scroll fluido su iOS */
+  padding: var(--sc-space-3) var(--sc-space-4);
+  background: var(--sc-color-surface-alt);
+  border-radius: var(--sc-radius-sm);
+  border: var(--sc-border-width) solid var(--sc-color-border);
+  font-size: var(--sc-text-sm);
+  /* Stili interni del corpo_html generato (sezioni, tabelle, titoli h2/h3/p). */
+}
+.ed-anteprima-scroll h2 {
+  font-size: var(--sc-text-base);
+  font-weight: var(--sc-weight-semibold);
+  margin-block: var(--sc-space-3) var(--sc-space-2);
+}
+.ed-anteprima-scroll h3 {
+  font-size: var(--sc-text-sm);
+  font-weight: var(--sc-weight-semibold);
+  margin-block: var(--sc-space-2) var(--sc-space-1);
+}
+.ed-anteprima-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sc-text-xs);
+  margin-block: var(--sc-space-2);
+}
+.ed-anteprima-scroll th,
+.ed-anteprima-scroll td {
+  padding: var(--sc-space-1) var(--sc-space-2);
+  border: var(--sc-border-width) solid var(--sc-color-border);
+  text-align: start;
+  vertical-align: top;
+}
+.ed-anteprima-scroll th { font-weight: var(--sc-weight-semibold); }
+.ed-anteprima-scroll section { margin-block-end: var(--sc-space-3); }
+
+/* Nota sul raffinamento narrativo AI: testo muto, non invadente. */
+.ed-anteprima-avviso {
+  margin: 0;
+  font-size: var(--sc-text-xs);
+  color: var(--sc-color-text-muted);
+  font-style: italic;
+}
+
+/* Messaggio "scorri per abilitare": ben visibile, non allarmistico. */
+.ed-anteprima-gating {
+  margin: 0;
+  padding: var(--sc-space-2) var(--sc-space-3);
+  background: var(--sc-color-surface);
+  border: var(--sc-border-width) solid var(--sc-color-border);
+  border-radius: var(--sc-radius-sm);
+  font-size: var(--sc-text-sm);
+  color: var(--sc-color-text-muted);
+  text-align: center;
+}
+
+/* ============================================================================
+   STEP PRESENZE — prefisso pd- (presa di presenza operativa per impresa)
+   Riusa i token sc-* del design system. Nessuna modifica a styles.css.
+   ============================================================================ */
+
+/* Blocco impresa: card collassabile (nessun padding interno — la header e il
+   corpo lo gestiscono da soli per allineare i bordi delle righe). */
+.pd-impresa-blocco { padding: 0; overflow: hidden; }
+
+/* Intestazione impresa: bottone a tutta larghezza con spazio tra nome e contatore. */
+.pd-impresa-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sc-space-3);
+  width: 100%;
+  min-height: var(--sc-touch-min);
+  padding: var(--sc-space-3) var(--sc-space-4);
+  background: transparent;
+  border: none;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pd-impresa-header__titolo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-space-1);
+  flex: 1;
+  min-width: 0;
+}
+.pd-impresa-header__nome {
+  font-weight: var(--sc-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Badge contatore "N/M" nell'intestazione: sfondo neutro, numeri tabulari. */
+.pd-contatore {
+  flex-shrink: 0;
+  background: var(--sc-color-surface-alt);
+  color: var(--sc-color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Titoletto di sotto-sezione (Uomini / Mezzi / Attrezzature / Noli). */
+.pd-sottosezione-titolo {
+  margin: 0;
+  padding: var(--sc-space-2) var(--sc-space-4);
+  font-size: var(--sc-text-sm);
+  font-weight: var(--sc-weight-semibold);
+  color: var(--sc-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-top: var(--sc-border-width) solid var(--sc-color-border);
+}
+
+/* Lista soggetti: nessun stile di lista, le righe gestiscono il bordo. */
+.pd-lista-soggetti { list-style: none; margin: 0; padding: 0; }
+
+/* Riga soggetto: colonna principale + nota espandibile. */
+.pd-riga { display: flex; flex-direction: column; }
+
+.pd-riga__principale {
+  display: flex;
+  align-items: center;
+  gap: var(--sc-space-3);
+  padding: var(--sc-space-2) var(--sc-space-4);
+  min-height: var(--sc-touch-min);
+  border-top: var(--sc-border-width) solid var(--sc-color-border);
+}
+
+/* Toggle switch (role="switch"): sostituisce checkbox per flag binario. */
+.pd-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  width: 2.75rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--sc-color-border-strong);
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  transition: background-color var(--sc-duration-fast) var(--sc-ease-standard);
+}
+.pd-toggle[aria-checked="true"] { background: var(--sc-color-primary); }
+.pd-toggle__knob {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform var(--sc-duration-fast) var(--sc-ease-standard);
+  pointer-events: none;
+}
+.pd-toggle[aria-checked="true"] .pd-toggle__knob { transform: translateX(1.25rem); }
+
+/* Area informativa della riga (bottone espandibile). */
+.pd-riga__info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: start;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  min-width: 0;
+  padding: var(--sc-space-1) 0;
+}
+.pd-riga__nome { font-weight: var(--sc-weight-medium); }
+.pd-riga__meta { font-size: var(--sc-text-sm); color: var(--sc-color-text-muted); }
+
+/* Area informativa statica (non espandibile, es. non-in-elenco). */
+.pd-riga__info--static {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Semaforo: pallino colorato basato sui token success/warning/danger. */
+.pd-semaforo {
+  flex-shrink: 0;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  background: var(--sc-color-border-strong); /* grigio default */
+}
+.pd-semaforo--verde  { background: var(--sc-success-700); }
+.pd-semaforo--giallo { background: var(--sc-warning-700); }
+.pd-semaforo--rosso  { background: var(--sc-danger-700); }
+.pd-semaforo--grigio { background: var(--sc-color-border-strong); }
+
+/* Nota espandibile: sfondo alternato per separarla visivamente dalla riga. */
+.pd-riga__nota {
+  padding: var(--sc-space-3) var(--sc-space-4);
+  background: var(--sc-color-surface-alt);
+  border-top: var(--sc-border-width) solid var(--sc-color-border);
 }

@@ -6,7 +6,7 @@
  * RESPONSABILITÀ (progettazione sez. 6)
  *  - Stato del verbale in compilazione (record schema 4.1), con auto-save
  *    trasparente in IDB (niente bottone "Salva" — progettazione 6.1/14.2).
- *  - Stepper a 4 step: Dati generali → Presenti → NC → Firme/Finalizza, con
+ *  - Stepper a 5 step: Dati generali → Presenze → Presenti → NC → Firme/Finalizza, con
  *    navigazione avanti/indietro/salto e stato visivo (completo/corrente/futuro).
  *  - Apertura via editorIntent (handoff dal cruscotto): 'nuovo' crea una bozza,
  *    'modifica' carica un verbale esistente.
@@ -50,12 +50,13 @@ import {
   lunghezzaReale,
 } from '../../shared/utils.js';
 import { crea as creaCanvasFirma } from '../../shared/firme-canvas.js';
-import { componiFileInterscambio, condividiVerbale } from '../../shared/webshare-deposit.js';
+import { componiFileInterscambio, condividiVerbale, generaCorpoHtmlSopralluogo } from '../../shared/webshare-deposit.js';
 import {
   STEP,
   NUM_STEP,
   LIVELLI_NC,
   calcolaScadenzaNc,
+  calcolaSemaforo,
   stepCompleto,
   validaPerFinalizzazione,
 } from './validazione.js';
@@ -78,6 +79,13 @@ export default function editorVerbale() {
     /** Anagrafica corrente del cantiere (per la ricerca presenti), o null. */
     anagrafica: null,
 
+    /* --- Stato UI: step presenze --- */
+    /** Mappa id_impresa → bool; undefined = aperto (default). */
+    presenzeBlocksOpen: {},
+    sheetNonInElencoAperto: false,
+    /** Bozza inserimento "non in elenco". */
+    nonInElenco: { impresa_dichiarata: '', nome_dichiarato: '', tipo: 'lavoratore', nota: '' },
+
     /* --- Stato UI: bottom sheet presenti --- */
     sheetPresenteAperto: false,
     modoInserimento: 'anagrafica',  // 'anagrafica' | 'manuale'
@@ -96,12 +104,32 @@ export default function editorVerbale() {
     rifiutoPresenteId: null,
     rifiutoMotivo: '',
 
+    /* --- Stato UI: firma da immagine --- */
+    /** Contesto corrente per l'import file: { tipo, presenteId? }. */
+    importaFirmaContesto: null,
+
     /* --- Stato UI: finalizzazione --- */
     modalFinalizzaAperto: false,
     /** Mancanze pre-finalizzazione, se la validazione fallisce. */
     mancanze: [],
     /** Invio in corso (disabilita il bottone, evita doppio invio). */
     invioInCorso: false,
+
+    /* --- Stato UI: anteprima pre-firma --- */
+    /**
+     * L'utente ha scorso l'anteprima fino in fondo. Solo allora i controlli di
+     * firma si abilitano. Stato di sessione puro: NON persistito in IDB (se si
+     * rientra nello step, bisogna riscorrere — garantisce che si rilegga il
+     * verbale anche dopo eventuali modifiche).
+     */
+    anteprimaLetta: false,
+    /**
+     * Cache HTML del corpo verbale per lo step FIRME. Aggiornata all'INGRESSO
+     * nello step (non reattiva) per evitare ricalcoli a ogni keystroke.
+     */
+    _corpoHtmlCache: '',
+    /** Handler scroll dell'anteprima, tenuto per il removeEventListener. */
+    _anteprimaScrollHandler: null,
 
     /* --- Riferimenti per teardown --- */
     _canvasFirma: null,
@@ -148,6 +176,7 @@ export default function editorVerbale() {
       // < 1s prima di uscire) venga eseguito prima della teardown.
       if (this._salvaDebounced) this._salvaDebounced.flush();
       this._smontaCanvas();
+      this._sganciaScrollAnteprima();
       if (this._releaseTrap) { this._releaseTrap(); this._releaseTrap = null; }
     },
 
@@ -195,6 +224,7 @@ export default function editorVerbale() {
         stato_luoghi: '',
         note_prescrizioni: '',
         presenti: [],
+        presenze: [],
         nc_drafts: [],
         redattore: {
           nome_cognome: imp.nome_cognome || '',
@@ -222,6 +252,14 @@ export default function editorVerbale() {
       const rec = await getVerbale(id);
       if (rec) {
         this.v = rec;
+        // Normalizzazione difensiva per record creati prima dei campi corrispondenti.
+        // getVerbale() è un get() puro senza trasformazioni: i campi aggiunti in
+        // sessioni successive non esistono nei record vecchi e causano TypeError al
+        // primo accesso (push, filter, ecc.). Non modificare idb.js: normalizziamo
+        // in memoria qui; il campo verrà scritto permanentemente al prossimo _persisti().
+        if (!Array.isArray(this.v.presenze))  this.v.presenze  = [];
+        if (!Array.isArray(this.v.presenti))  this.v.presenti  = [];
+        if (!Array.isArray(this.v.nc_drafts)) this.v.nc_drafts = [];
       } else {
         // Verbale non trovato (es. eliminato altrove): ripieghiamo su nuovo.
         await this._nuovoVerbale();
@@ -235,6 +273,7 @@ export default function editorVerbale() {
      */
     async _persisti() {
       if (!this.v) return;
+      if (!this.modificabile) return; // verbale inviato: sola lettura, non sovrascrivere
       try {
         await salvaVerbale(JSON.parse(JSON.stringify(this.v)));
       } catch (err) {
@@ -256,6 +295,17 @@ export default function editorVerbale() {
      * STEPPER
      * =================================================================== */
 
+    /**
+     * Vero se il verbale è modificabile. Un verbale 'inviato' è un punto di
+     * non ritorno: il documento è già uscito verso SafeHub/impresa. L'editor lo
+     * apre in sola lettura per consultazione, senza permettere modifiche silenziose.
+     * Tutti i controlli di editing usano questo getter come gate centralizzato.
+     * @returns {boolean}
+     */
+    get modificabile() {
+      return this.v?.stato !== 'inviato';
+    },
+
     /** @returns {boolean} Vero se lo step indicato è completo (per la spunta). */
     completo(step) {
       return this.v ? stepCompleto(step, this.v) : false;
@@ -274,6 +324,19 @@ export default function editorVerbale() {
     vaiStep(step) {
       if (step < STEP.DATI || step > NUM_STEP) return;
       if (!this.accessibile(step)) return;
+
+      // Gestione anteprima pre-firma: all'ingresso nello step FIRME
+      // aggiorna la cache del corpo_html e resetta il gating. All'uscita,
+      // rimuove il listener scroll. Non usiamo un getter reattivo per
+      // l'html perché si ricalcolerebbe a ogni keystroke su tutti gli step.
+      if (step === STEP.FIRME) {
+        this.anteprimaLetta = false;
+        this._corpoHtmlCache = generaCorpoHtmlSopralluogo(this.v);
+        this.$nextTick(() => this._agganciScrollAnteprima());
+      } else if (this.stepCorrente === STEP.FIRME) {
+        this._sganciaScrollAnteprima();
+      }
+
       this.stepCorrente = step;
       this._persisti();
       announce(`Passo ${step} di ${NUM_STEP}: ${this._titoloStep(step)}.`);
@@ -292,11 +355,54 @@ export default function editorVerbale() {
     /** Titolo leggibile dello step, per annunci e intestazione. */
     _titoloStep(step) {
       return {
-        [STEP.DATI]: 'Dati generali',
+        [STEP.DATI]:     'Dati generali',
+        [STEP.PRESENZE]: 'Presenze',
         [STEP.PRESENTI]: 'Presenti',
-        [STEP.NC]: 'Non conformità',
-        [STEP.FIRME]: 'Firme e finalizzazione',
+        [STEP.NC]:       'Non conformità',
+        [STEP.FIRME]:    'Firme e finalizzazione',
       }[step] ?? '';
+    },
+
+    /**
+     * Aggancia il listener scroll sul contenitore anteprima. Chiamato via
+     * $nextTick dopo aver settato stepCorrente, così il div è visibile.
+     * Controlla subito il fondo: se il corpo è così corto da non richiedere
+     * scorrimento, abilita la firma senza attendere un evento scroll.
+     */
+    _agganciScrollAnteprima() {
+      const el = this.$refs.anteprimaScroll;
+      if (!el) return;
+      this._sganciaScrollAnteprima(); // evita listener doppi se chiamato più volte
+      this._anteprimaScrollHandler = () => {
+        // Tolleranza 8px per sub-pixel rendering e rounding di iOS Safari.
+        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
+          if (!this.anteprimaLetta) {
+            this.anteprimaLetta = true;
+            announce('Verbale letto, firma abilitata.');
+          }
+        }
+      };
+      el.addEventListener('scroll', this._anteprimaScrollHandler, { passive: true });
+      // rAF invece del check sincrono: $nextTick è un microtask e gira PRIMA del
+      // reflow del browser. Con scrollHeight/clientHeight ancora a 0, la condizione
+      // sarebbe sempre vera e si bypassa il gating. rAF garantisce il layout.
+      requestAnimationFrame(() => {
+        if (!this._anteprimaScrollHandler) return; // smontato nel frattempo
+        if (el.scrollHeight <= el.clientHeight + 8) {
+          if (!this.anteprimaLetta) {
+            this.anteprimaLetta = true;
+            announce('Verbale letto, firma abilitata.');
+          }
+        }
+      });
+    },
+
+    /** Rimuove il listener scroll anteprima. */
+    _sganciaScrollAnteprima() {
+      if (!this._anteprimaScrollHandler) return;
+      const el = this.$refs.anteprimaScroll;
+      if (el) el.removeEventListener('scroll', this._anteprimaScrollHandler);
+      this._anteprimaScrollHandler = null;
     },
 
     /* ===================================================================
@@ -310,7 +416,245 @@ export default function editorVerbale() {
     },
 
     /* ===================================================================
-     * STEP 2 — PRESENTI
+     * STEP 2 — PRESENZE
+     * =================================================================== */
+
+    /**
+     * Soggetti dell'anagrafica raggruppati per impresa, pronti per il markup.
+     * - Lavoratori, mezzi, attrezzature: join su impresa_id.
+     * - Noli: join su impresa_UTILIZZATRICE_id (il nolo appare nel blocco
+     *   dell'impresa che lo usa, non di chi lo noleggia).
+     * - In coda: "Non assegnati" per lavoratori senza impresa risolvibile.
+     * @returns {Array<{impresa:object, lavoratori:object[], mezzi:object[], attrezzature:object[], noli:object[]}>}
+     */
+    get presenzePerImpresa() {
+      if (!this.anagrafica) return [];
+      const imprese      = this.anagrafica.imprese      ?? [];
+      const lavoratori   = this.anagrafica.lavoratori   ?? [];
+      const mezzi        = this.anagrafica.mezzi        ?? [];
+      const attrezzature = this.anagrafica.attrezzature ?? [];
+      const noli         = this.anagrafica.noli         ?? [];
+      const impreseIds   = new Set(imprese.map((i) => i.id));
+
+      const gruppi = imprese.map((imp) => ({
+        impresa:      imp,
+        lavoratori:   lavoratori.filter((l) => l.impresa_id === imp.id),
+        mezzi:        mezzi.filter((m) => m.impresa_id === imp.id),
+        attrezzature: attrezzature.filter((a) => a.impresa_id === imp.id),
+        noli:         noli.filter((n) => n.impresa_utilizzatrice_id === imp.id),
+      })).filter((g) =>
+        g.lavoratori.length + g.mezzi.length + g.attrezzature.length + g.noli.length > 0,
+      );
+
+      // Lavoratori senza impresa risolvibile → sezione "Non assegnati" in fondo.
+      const orfani = lavoratori.filter((l) => !l.impresa_id || !impreseIds.has(l.impresa_id));
+      if (orfani.length > 0) {
+        gruppi.push({
+          impresa:      { id: '__orfani__', ragione_sociale: 'Non assegnati', tipoRapporto: null },
+          lavoratori:   orfani,
+          mezzi:        [],
+          attrezzature: [],
+          noli:         [],
+        });
+      }
+      return gruppi;
+    },
+
+    /**
+     * Mappa rapida anagrafica_ref → presenza item, per la lettura dello stato
+     * toggle/nota nel markup senza scorrere l'array a ogni riga.
+     * @returns {Record<string, object>}
+     */
+    get presenzeMap() {
+      const map = {};
+      for (const pr of (this.v?.presenze ?? [])) {
+        if (pr.anagrafica_ref) map[pr.anagrafica_ref] = pr;
+      }
+      return map;
+    },
+
+    /** Stato "aperto" del blocco impresa (default aperto se mai toccato). */
+    isBloccoAperto(impresaId) {
+      return this.presenzeBlocksOpen[impresaId] !== false;
+    },
+
+    /** Collassa/espande il blocco impresa. */
+    toggleBloccoImpresa(impresaId) {
+      this.presenzeBlocksOpen[impresaId] = !this.isBloccoAperto(impresaId);
+    },
+
+    /** Contatore "N/M" per l'intestazione blocco impresa. */
+    contatorePresenze(gruppo) {
+      const refs = new Set([
+        ...gruppo.lavoratori.map((s) => s.id),
+        ...gruppo.mezzi.map((s) => s.id),
+        ...gruppo.attrezzature.map((s) => s.id),
+        ...gruppo.noli.map((s) => s.id),
+      ]);
+      const presenti = (this.v?.presenze ?? []).filter(
+        (pr) => pr.presente && pr.anagrafica_ref && refs.has(pr.anagrafica_ref),
+      ).length;
+      return `${presenti}/${refs.size}`;
+    },
+
+    /**
+     * Wrapper del markup: calcola il semaforo per una riga risolvendo l'impresa
+     * dall'anagrafica (necessaria per il check patenteCrediti dei lavoratori).
+     * @param {object} soggetto
+     * @param {string} tipo
+     * @param {string} impresaId  Id impresa o '__orfani__'.
+     * @returns {'verde'|'giallo'|'rosso'|'grigio'}
+     */
+    semaforoRiga(soggetto, tipo, impresaId) {
+      const impresa = (impresaId && impresaId !== '__orfani__')
+        ? (this.anagrafica?.imprese ?? []).find((i) => i.id === impresaId) ?? null
+        : null;
+      return calcolaSemaforo(soggetto, tipo, this.v?.data_sopralluogo ?? '', impresa);
+    },
+
+    /**
+     * Etichetta descrittiva del soggetto, congelata al momento del rilievo.
+     * Serve al JSON di interscambio: il verbale deve essere autoconsistente
+     * anche se l'anagrafica viene aggiornata in seguito.
+     */
+    _etichettaSoggetto(soggetto, tipo) {
+      if (tipo === 'lavoratore') {
+        const m = soggetto.qualifica || soggetto.mansione || '';
+        return m ? `${soggetto.nome_cognome || ''} — ${m}` : (soggetto.nome_cognome || '');
+      }
+      if (tipo === 'mezzo') {
+        const t  = soggetto.tipologia || soggetto.tipo || '';
+        const mm = [soggetto.marca, soggetto.modello].filter(Boolean).join('/') || soggetto.marcaModello || '';
+        const mt = soggetto.matricola || '';
+        return [t, mm, mt].filter(Boolean).join(' — ');
+      }
+      if (tipo === 'attrezzatura') {
+        const t = soggetto.tipologia || soggetto.tipo || '';
+        const d = soggetto.descrizione || '';
+        return [t, d].filter(Boolean).join(' — ');
+      }
+      if (tipo === 'nolo') {
+        const o = soggetto.oggetto || '';
+        const t = soggetto.tipo || '';
+        const n = soggetto.noleggiante_nome || this.nomeImpresa(soggetto.impresa_noleggiante_id) || '';
+        return [o, t, n].filter(Boolean).join(' — ');
+      }
+      return '';
+    },
+
+    /**
+     * Attiva/disattiva la presenza di un soggetto in cantiere.
+     * Passaggio a presente: cattura ora_rilevazione e congela semaforo + etichetta.
+     * Passaggio a non-presente: annulla l'ora (la nota rimane).
+     * Azione discreta → _persisti() diretto (non debounced).
+     * @param {object} soggetto  Record anagrafica.
+     * @param {string} tipo      'lavoratore'|'mezzo'|'attrezzatura'|'nolo'.
+     * @param {string} impresaId Id impresa di appartenenza/utilizzatrice.
+     */
+    togglePresenza(soggetto, tipo, impresaId) {
+      if (!this.v) return;
+      const ref = soggetto.id;
+      const idx = this.v.presenze.findIndex((pr) => pr.anagrafica_ref === ref && pr.tipo === tipo);
+      if (idx >= 0) {
+        const pr = this.v.presenze[idx];
+        pr.presente = !pr.presente;
+        if (pr.presente) {
+          pr.ora_rilevazione = timestampIso();
+          pr.semaforo = this.semaforoRiga(soggetto, tipo, impresaId);
+        } else {
+          pr.ora_rilevazione = null;
+        }
+      } else {
+        const semaforo = this.semaforoRiga(soggetto, tipo, impresaId);
+        this.v.presenze.push({
+          id_locale:         generaIdLocale('pz'),
+          tipo,
+          origine:           'elenco',
+          anagrafica_ref:    ref,
+          impresa_ref:       (impresaId !== '__orfani__' ? impresaId : null) ?? null,
+          etichetta:         this._etichettaSoggetto(soggetto, tipo),
+          impresa_dichiarata: null,
+          nome_dichiarato:   null,
+          presente:          true,
+          ora_rilevazione:   timestampIso(),
+          nota:              null,
+          semaforo,
+        });
+      }
+      const presente = this.v.presenze.find((pr) => pr.anagrafica_ref === ref && pr.tipo === tipo)?.presente;
+      announce(presente ? 'Presenza registrata.' : 'Presenza rimossa.');
+      const sem = this.v.presenze.find((pr) => pr.anagrafica_ref === ref && pr.tipo === tipo)?.semaforo;
+      if (presente && sem === 'rosso') {
+        announce('Attenzione: documento scaduto o posizione irregolare.', 'assertive');
+      }
+      this._persisti();
+    },
+
+    /**
+     * Aggiorna la nota di una presenza. Usa il debounce (testo libero, audit §6.3).
+     * @param {string} idLocale
+     * @param {string} testo
+     */
+    setNotaPresenza(idLocale, testo) {
+      if (!idLocale || !this.v) return;
+      const pr = this.v.presenze.find((x) => x.id_locale === idLocale);
+      if (!pr) return;
+      pr.nota = testo.trim() || null;
+      this._salvaDebounced();
+    },
+
+    /** Rimuove una presenza. Azione discreta → _persisti() diretto. */
+    rimuoviPresenza(idLocale) {
+      if (!this.v) return;
+      this.v.presenze = this.v.presenze.filter((x) => x.id_locale !== idLocale);
+      this._persisti();
+    },
+
+    /** Apre il bottom sheet "aggiungi presente non in elenco". */
+    apriSheetNonInElenco() {
+      this.nonInElenco = { impresa_dichiarata: '', nome_dichiarato: '', tipo: 'lavoratore', nota: '' };
+      this.sheetNonInElencoAperto = true;
+      this.$nextTick(() => {
+        const dialog = this.$refs.sheetNonInElenco;
+        if (dialog) this._releaseTrap = trapFocus(dialog, { onEscape: () => this.chiudiSheetNonInElenco() });
+      });
+    },
+
+    /** Chiude il bottom sheet "non in elenco". */
+    chiudiSheetNonInElenco() {
+      this.sheetNonInElencoAperto = false;
+      if (this._releaseTrap) { this._releaseTrap(); this._releaseTrap = null; }
+    },
+
+    /**
+     * Aggiunge un soggetto non in elenco alle presenze. Richiede almeno il nome
+     * dichiarato. Semaforo sempre 'grigio': dati non verificabili.
+     * Azione discreta → _persisti() diretto.
+     */
+    aggiungiPresenteNonInElenco() {
+      if (!this.nonInElenco.nome_dichiarato.trim()) return;
+      this.v.presenze.push({
+        id_locale:          generaIdLocale('pz'),
+        tipo:               this.nonInElenco.tipo,
+        origine:            'non_in_elenco',
+        anagrafica_ref:     null,
+        impresa_ref:        null,
+        etichetta:          this.nonInElenco.nome_dichiarato.trim(),
+        impresa_dichiarata: this.nonInElenco.impresa_dichiarata.trim() || null,
+        nome_dichiarato:    this.nonInElenco.nome_dichiarato.trim(),
+        presente:           true,
+        ora_rilevazione:    timestampIso(),
+        nota:               this.nonInElenco.nota.trim() || null,
+        semaforo:           'grigio',
+      });
+      this._persisti();
+      const nome = this.nonInElenco.nome_dichiarato.trim();
+      this.chiudiSheetNonInElenco();
+      announce(`${nome} aggiunto alle presenze non in elenco.`);
+    },
+
+    /* ===================================================================
+     * STEP 3 — PRESENTI
      * =================================================================== */
 
     /** Apre il bottom sheet di aggiunta presente. */
@@ -569,6 +913,102 @@ export default function editorVerbale() {
 
     _smontaCanvas() {
       if (this._canvasFirma) { this._canvasFirma.destroy(); this._canvasFirma = null; }
+    },
+
+    /* ===================================================================
+     * FIRMA DA IMMAGINE (JPG/PNG)
+     * =================================================================== */
+
+    /**
+     * Imposta il contesto di firma e attiva l'input file nascosto.
+     * Chiamato direttamente dal tap → la chiamata a input.click() è dentro
+     * il gestore dell'evento utente, quindi valida anche su iOS Safari.
+     * @param {{tipo:'presente'|'redattore', presenteId?:string}} contesto
+     */
+    apriImportaFirma(contesto) {
+      this.importaFirmaContesto = contesto;
+      const input = this.$refs.inputFirmaImmagine;
+      if (!input) return;
+      input.value = ''; // reset: permette di riscegliere lo stesso file dopo un errore
+      input.click();
+    },
+
+    /**
+     * Gestisce il file scelto dall'utente. Flusso:
+     *  1. Valida tipo (PNG/JPEG) e dimensione (≤ 5 MB).
+     *  2. Legge con FileReader → data URL.
+     *  3. Disegna su canvas offscreen con fondo bianco → normalizza in PNG.
+     *  4. Salva il PNG nel campo corretto (stesso schema di confermaFirma).
+     * Nessuna modifica a firme-canvas.js: quel file gestisce solo il canvas live.
+     * @param {Event} event  Change event dall'input file.
+     */
+    gestisciFileImportaFirma(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const TIPI_AMMESSI = ['image/png', 'image/jpeg'];
+      const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+      if (!TIPI_AMMESSI.includes(file.type)) {
+        // HEIC è il formato foto default su iPhone/iPad: l'utente iOS lo incontra spesso.
+        announce('Formato non supportato (le foto iPhone sono spesso HEIC). Usa un JPEG o PNG.', 'assertive');
+        return;
+      }
+      if (file.size > MAX_BYTES) {
+        announce('Immagine troppo grande. Dimensione massima: 5 MB.', 'assertive');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          // Ridimensiona mantenendo le proporzioni: max 800×300 px.
+          // Una firma è orizzontale; limitare l'altezza evita immagini enormi.
+          const MAX_W = 800;
+          const MAX_H = 300;
+          const ratio = Math.min(MAX_W / img.naturalWidth, MAX_H / img.naturalHeight, 1);
+          const w = Math.round(img.naturalWidth * ratio);
+          const h = Math.round(img.naturalHeight * ratio);
+          const offscreen = document.createElement('canvas');
+          offscreen.width = w;
+          offscreen.height = h;
+          const ctx = offscreen.getContext('2d');
+          // Fondo bianco: le firme scansionate su carta devono essere leggibili
+          // nel DOCX sia in tema chiaro che scuro, e consistenti con il canvas live.
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          const png = offscreen.toDataURL('image/png');
+
+          const ora = timestampIso();
+          const contesto = this.importaFirmaContesto;
+          if (contesto?.tipo === 'presente') {
+            const p = this.v.presenti.find((x) => x.id_locale === contesto.presenteId);
+            if (p) {
+              p.firmato          = true;
+              p.firma_png        = png;
+              p.timestamp_firma  = ora;
+              p.rifiuto_firma    = false;   // firma e rifiuto mutuamente esclusivi
+              p.motivo_rifiuto   = null;
+            }
+          } else if (contesto?.tipo === 'redattore') {
+            this.v.redattore.firma_png_base64 = png;
+            this.v.redattore.timestamp_firma  = ora;
+            this.v.redattore.tipo_firma       = 'immagine';
+          }
+          this._persisti();
+          this.importaFirmaContesto = null;
+          announce('Immagine firma acquisita.');
+        };
+        img.onerror = () => {
+          announce('Impossibile leggere l\'immagine. Verifica che il file sia valido.', 'assertive');
+        };
+        img.src = /** @type {string} */ (e.target.result);
+      };
+      reader.onerror = () => {
+        announce('Errore nella lettura del file. Riprova.', 'assertive');
+      };
+      reader.readAsDataURL(file);
     },
 
     /* ===================================================================

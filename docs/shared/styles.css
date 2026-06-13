@@ -339,7 +339,8 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
-  min-height: 100dvh; /* dvh: tiene conto delle barre dinamiche del browser mobile */
+  min-height: 100vh;   /* fallback per iOS < 16 (no dvh) */
+  min-height: 100dvh;  /* dvh: tiene conto delle barre dinamiche del browser mobile */
 }
 
 h1 { font-size: var(--sc-text-2xl); line-height: var(--sc-leading-tight); font-weight: var(--sc-weight-bold); }
@@ -393,6 +394,7 @@ p { line-height: var(--sc-leading-relaxed); }
 .sc-app {
   display: flex;
   flex-direction: column;
+  min-height: 100vh;   /* fallback per iOS < 16 (no dvh) */
   min-height: 100dvh;
 }
 
@@ -738,6 +740,7 @@ p { line-height: var(--sc-leading-relaxed); }
 .sc-sheet {
   z-index: var(--sc-z-dialog);
   width: 100%;
+  max-height: 90vh;    /* fallback per iOS < 16 (no dvh) */
   max-height: 90dvh;
   overflow-y: auto;
   background: var(--sc-color-surface);

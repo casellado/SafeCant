@@ -293,6 +293,22 @@
               </svg>
             </button>
 
+            <!-- Sblocca: riporta a bozza un verbale pronto_invio (mai inviato) -->
+            <button
+              type="button"
+              class="sc-iconbtn"
+              x-show="eSbloccabile(v)"
+              @click="chiediSblocca(v)"
+              :aria-label="`Sblocca verbale del ${dataCard(v)} e torna in bozza`"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"
+                      stroke="currentColor" stroke-width="2"/>
+                <path d="M7 11V7a5 5 0 019.9-1"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+
             <button
               type="button"
               class="sc-iconbtn cru-azione-elimina"
@@ -415,6 +431,42 @@
     </div>
   </template>
 
+  <!-- =================================================================== -->
+  <!-- === MODAL: CONFERMA SBLOCCO ====================================== -->
+  <!-- Sblocca pronto_invio → bozza, invalidando le firme già raccolte.   -->
+  <!-- =================================================================== -->
+  <template x-if="verbaleInSblocco">
+    <div class="sc-overlay" @click.self="annullaSblocca()">
+      <div
+        class="sc-sheet"
+        x-ref="modalSblocca"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="cru-sblocca-titolo"
+        aria-describedby="cru-sblocca-desc"
+        tabindex="-1"
+        @keydown.escape="annullaSblocca()"
+      >
+        <div class="sc-stack">
+          <h3 id="cru-sblocca-titolo" class="sc-card__title">Sbloccare il verbale?</h3>
+          <p id="cru-sblocca-desc">
+            Il verbale del <strong x-text="dataCard(verbaleInSblocco)"></strong> verrà
+            riaperto come bozza. <strong>Le firme già raccolte verranno azzerate</strong>
+            e dovranno essere riapposte sulla versione corretta.
+          </p>
+          <div class="sc-row sc-row--between">
+            <button type="button" class="sc-btn sc-btn--secondary" @click="annullaSblocca()">
+              Annulla
+            </button>
+            <button type="button" class="sc-btn sc-btn--danger" @click="confermaSblocca()">
+              Sblocca e azzera firme
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
 </div>
 <!-- ── /moduli/cruscotto/cruscotto.html ────────────────────────────────── -->
       </section>
@@ -446,12 +498,18 @@
   <template x-if="v">
     <div class="ed-shell">
 
+      <!-- Banner sola lettura: mostrato quando un verbale 'inviato' viene aperto
+           per consultazione. I controlli di editing sono disabilitati via JS. -->
+      <div class="ed-sola-lettura" x-show="!modificabile" x-cloak role="status">
+        Verbale già inviato — sola lettura
+      </div>
+
       <!-- =============================================================== -->
       <!-- === STEPPER =================================================== -->
       <!-- =============================================================== -->
       <nav class="ed-stepper" aria-label="Progresso compilazione verbale">
         <ol class="ed-stepper__list">
-          <template x-for="s in [STEP.DATI, STEP.PRESENTI, STEP.NC, STEP.FIRME]" :key="s">
+          <template x-for="s in [STEP.DATI, STEP.PRESENZE, STEP.PRESENTI, STEP.NC, STEP.FIRME]" :key="s">
             <li class="ed-stepper__item">
               <button
                 type="button"
@@ -487,13 +545,15 @@
 
         <div class="sc-field">
           <label class="sc-label" for="ed-data">Data sopralluogo <span class="sc-label__required" aria-hidden="true">*</span></label>
-          <input id="ed-data" class="sc-input" type="date" x-model="v.data_sopralluogo" @input="onCampoModificato()" aria-required="true">
+          <input id="ed-data" class="sc-input" type="date" x-model="v.data_sopralluogo" @input="onCampoModificato()" aria-required="true"
+                 :readonly="!modificabile">
         </div>
 
         <div class="sc-field">
           <label class="sc-label" for="ed-oggetto">Oggetto <span class="sc-label__required" aria-hidden="true">*</span></label>
           <input id="ed-oggetto" class="sc-input" type="text" x-model="v.oggetto" @input="onCampoModificato()"
-                 placeholder="Es. Sopralluogo coordinamento e controllo" aria-required="true">
+                 placeholder="Es. Sopralluogo coordinamento e controllo" aria-required="true"
+                 :readonly="!modificabile">
         </div>
 
         <!-- Condizioni meteo: radiogroup (progettazione 6.2). -->
@@ -510,6 +570,7 @@
               <button type="button" class="sc-segmented__option" role="radio"
                       :aria-checked="v.condizioni_meteo === m.v ? 'true' : 'false'"
                       :tabindex="v.condizioni_meteo === m.v ? '0' : '-1'"
+                      :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'"
                       @click="impostaMeteo(m.v)" x-text="m.l"></button>
             </template>
           </div>
@@ -519,29 +580,304 @@
         <div class="ed-due-colonne">
           <div class="sc-field">
             <label class="sc-label" for="ed-prog-da">Progressiva inizio</label>
-            <input id="ed-prog-da" class="sc-input" type="text" x-model="v.progressiva_inizio" @input="onCampoModificato()" placeholder="Es. km 42+150">
+            <input id="ed-prog-da" class="sc-input" type="text" x-model="v.progressiva_inizio" @input="onCampoModificato()" placeholder="Es. km 42+150" :readonly="!modificabile">
           </div>
           <div class="sc-field">
             <label class="sc-label" for="ed-prog-a">Progressiva fine</label>
-            <input id="ed-prog-a" class="sc-input" type="text" x-model="v.progressiva_fine" @input="onCampoModificato()" placeholder="Es. km 42+850">
+            <input id="ed-prog-a" class="sc-input" type="text" x-model="v.progressiva_fine" @input="onCampoModificato()" placeholder="Es. km 42+850" :readonly="!modificabile">
           </div>
         </div>
 
         <div class="sc-field">
           <label class="sc-label" for="ed-luoghi">Stato dei luoghi <span class="sc-label__required" aria-hidden="true">*</span></label>
           <textarea id="ed-luoghi" class="sc-textarea" x-model="v.stato_luoghi" @input="onCampoModificato()" rows="4" aria-required="true"
-                    placeholder="Descrivi lo stato dei luoghi…"></textarea>
+                    placeholder="Descrivi lo stato dei luoghi…" :readonly="!modificabile"></textarea>
         </div>
 
         <div class="sc-field">
           <label class="sc-label" for="ed-prescrizioni">Prescrizioni impartite <span class="sc-label__required" aria-hidden="true">*</span></label>
           <textarea id="ed-prescrizioni" class="sc-textarea" x-model="v.note_prescrizioni" @input="onCampoModificato()" rows="4" aria-required="true"
-                    placeholder="Indica le prescrizioni impartite…"></textarea>
+                    placeholder="Indica le prescrizioni impartite…" :readonly="!modificabile"></textarea>
         </div>
       </section>
 
       <!-- =============================================================== -->
-      <!-- === STEP 2 — PRESENTI ========================================= -->
+      <!-- === STEP 2 — PRESENZE ========================================= -->
+      <!-- =============================================================== -->
+      <section class="sc-stack" x-show="stepCorrente === STEP.PRESENZE" aria-label="Presenze in cantiere">
+        <div class="sc-row sc-row--between">
+          <h3>Presenze in cantiere</h3>
+        </div>
+        <p class="sc-field__hint sc-mt-0">Rileva la presenza di lavoratori, mezzi e attrezzature per impresa. Facoltativo.</p>
+
+        <!-- Nessuna anagrafica disponibile per questo cantiere -->
+        <template x-if="!anagrafica">
+          <div class="sc-card">
+            <p class="sc-text-muted">Nessuna anagrafica disponibile per questo cantiere. Importa il file nella sezione <strong>Anagrafica</strong> per usare questa funzione.</p>
+          </div>
+        </template>
+
+        <!-- Blocchi per impresa (solo se c'è un'anagrafica caricata) -->
+        <template x-if="anagrafica">
+          <div class="sc-stack" role="list" aria-label="Imprese in cantiere">
+            <template x-for="gruppo in presenzePerImpresa" :key="gruppo.impresa.id">
+              <div class="sc-card pd-impresa-blocco" role="listitem">
+
+                <!-- Intestazione impresa: bottone collassabile -->
+                <button
+                  type="button"
+                  class="pd-impresa-header"
+                  @click="toggleBloccoImpresa(gruppo.impresa.id)"
+                  :aria-expanded="isBloccoAperto(gruppo.impresa.id) ? 'true' : 'false'"
+                  :aria-controls="`pd-corpo-${gruppo.impresa.id}`"
+                >
+                  <span class="pd-impresa-header__titolo">
+                    <span class="pd-impresa-header__nome" x-text="gruppo.impresa.ragione_sociale || 'Non assegnati'"></span>
+                    <template x-if="gruppo.impresa.tipoRapporto">
+                      <span class="sc-badge" x-text="gruppo.impresa.tipoRapporto"></span>
+                    </template>
+                  </span>
+                  <span class="sc-badge pd-contatore"
+                        :aria-label="`${contatorePresenze(gruppo)} presenti`"
+                        x-text="contatorePresenze(gruppo)"></span>
+                </button>
+
+                <!-- Corpo collassabile: sotto-sezioni Uomini / Mezzi / Attrezzature / Noli -->
+                <div :id="`pd-corpo-${gruppo.impresa.id}`" x-show="isBloccoAperto(gruppo.impresa.id)">
+
+                  <!-- Uomini -->
+                  <template x-if="gruppo.lavoratori.length > 0">
+                    <section :aria-labelledby="`pd-h-uom-${gruppo.impresa.id}`">
+                      <h5 class="pd-sottosezione-titolo" :id="`pd-h-uom-${gruppo.impresa.id}`">Uomini</h5>
+                      <ul role="list" class="pd-lista-soggetti">
+                        <template x-for="sogg in gruppo.lavoratori" :key="sogg.id">
+                          <li x-data="{ espanso: false }" class="pd-riga">
+                            <div class="pd-riga__principale">
+                              <button type="button" role="switch"
+                                      :aria-checked="presenzeMap[sogg.id]?.presente ? 'true' : 'false'"
+                                      :aria-label="`Presenza: ${sogg.nome_cognome}`"
+                                      class="pd-toggle"
+                                      :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'"
+                                      @click.stop="togglePresenza(sogg, 'lavoratore', gruppo.impresa.id)">
+                                <span class="pd-toggle__knob" aria-hidden="true"></span>
+                              </button>
+                              <button type="button" class="pd-riga__info"
+                                      @click="espanso = !espanso"
+                                      :aria-expanded="espanso ? 'true' : 'false'"
+                                      :aria-label="`Dettagli ${sogg.nome_cognome}`">
+                                <span class="pd-riga__nome" x-text="sogg.nome_cognome"></span>
+                                <span class="pd-riga__meta" x-text="sogg.qualifica || ''"></span>
+                              </button>
+                              <span role="img" class="pd-semaforo"
+                                    :class="`pd-semaforo--${semaforoRiga(sogg, 'lavoratore', gruppo.impresa.id)}`"
+                                    :aria-label="`Semaforo documenti: ${semaforoRiga(sogg, 'lavoratore', gruppo.impresa.id)}`"></span>
+                            </div>
+                            <div x-show="espanso" x-cloak class="pd-riga__nota sc-stack">
+                              <template x-if="presenzeMap[sogg.id]">
+                                <div class="sc-field">
+                                  <label class="sc-label" :for="`pd-nota-l-${sogg.id}`">Nota</label>
+                                  <textarea :id="`pd-nota-l-${sogg.id}`" class="sc-textarea" rows="2"
+                                            :value="presenzeMap[sogg.id].nota || ''"
+                                            @input="setNotaPresenza(presenzeMap[sogg.id].id_locale, $event.target.value)"
+                                            placeholder="Note opzionali…" :readonly="!modificabile"></textarea>
+                                </div>
+                              </template>
+                              <template x-if="!presenzeMap[sogg.id]">
+                                <p class="sc-field__hint">Segna la presenza per aggiungere una nota.</p>
+                              </template>
+                            </div>
+                          </li>
+                        </template>
+                      </ul>
+                    </section>
+                  </template>
+
+                  <!-- Mezzi -->
+                  <template x-if="gruppo.mezzi.length > 0">
+                    <section :aria-labelledby="`pd-h-mez-${gruppo.impresa.id}`">
+                      <h5 class="pd-sottosezione-titolo" :id="`pd-h-mez-${gruppo.impresa.id}`">Mezzi</h5>
+                      <ul role="list" class="pd-lista-soggetti">
+                        <template x-for="sogg in gruppo.mezzi" :key="sogg.id">
+                          <li x-data="{ espanso: false }" class="pd-riga">
+                            <div class="pd-riga__principale">
+                              <button type="button" role="switch"
+                                      :aria-checked="presenzeMap[sogg.id]?.presente ? 'true' : 'false'"
+                                      :aria-label="`Presenza mezzo: ${sogg.tipologia || sogg.tipo || ''}`"
+                                      class="pd-toggle"
+                                      :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'"
+                                      @click.stop="togglePresenza(sogg, 'mezzo', gruppo.impresa.id)">
+                                <span class="pd-toggle__knob" aria-hidden="true"></span>
+                              </button>
+                              <button type="button" class="pd-riga__info"
+                                      @click="espanso = !espanso"
+                                      :aria-expanded="espanso ? 'true' : 'false'"
+                                      :aria-label="`Dettagli mezzo`">
+                                <span class="pd-riga__nome" x-text="(sogg.tipologia || sogg.tipo || '') + (sogg.marca ? ' — ' + sogg.marca : '') + (sogg.modello ? ' ' + sogg.modello : '')"></span>
+                                <span class="pd-riga__meta" x-text="sogg.matricola || ''"></span>
+                              </button>
+                              <span role="img" class="pd-semaforo"
+                                    :class="`pd-semaforo--${semaforoRiga(sogg, 'mezzo', gruppo.impresa.id)}`"
+                                    :aria-label="`Semaforo documenti: ${semaforoRiga(sogg, 'mezzo', gruppo.impresa.id)}`"></span>
+                            </div>
+                            <div x-show="espanso" x-cloak class="pd-riga__nota sc-stack">
+                              <template x-if="presenzeMap[sogg.id]">
+                                <div class="sc-field">
+                                  <label class="sc-label" :for="`pd-nota-m-${sogg.id}`">Nota</label>
+                                  <textarea :id="`pd-nota-m-${sogg.id}`" class="sc-textarea" rows="2"
+                                            :value="presenzeMap[sogg.id].nota || ''"
+                                            @input="setNotaPresenza(presenzeMap[sogg.id].id_locale, $event.target.value)"
+                                            placeholder="Note opzionali…" :readonly="!modificabile"></textarea>
+                                </div>
+                              </template>
+                              <template x-if="!presenzeMap[sogg.id]">
+                                <p class="sc-field__hint">Segna la presenza per aggiungere una nota.</p>
+                              </template>
+                            </div>
+                          </li>
+                        </template>
+                      </ul>
+                    </section>
+                  </template>
+
+                  <!-- Attrezzature -->
+                  <template x-if="gruppo.attrezzature.length > 0">
+                    <section :aria-labelledby="`pd-h-attr-${gruppo.impresa.id}`">
+                      <h5 class="pd-sottosezione-titolo" :id="`pd-h-attr-${gruppo.impresa.id}`">Attrezzature</h5>
+                      <ul role="list" class="pd-lista-soggetti">
+                        <template x-for="sogg in gruppo.attrezzature" :key="sogg.id">
+                          <li x-data="{ espanso: false }" class="pd-riga">
+                            <div class="pd-riga__principale">
+                              <button type="button" role="switch"
+                                      :aria-checked="presenzeMap[sogg.id]?.presente ? 'true' : 'false'"
+                                      :aria-label="`Presenza attrezzatura: ${sogg.tipologia || sogg.tipo || ''}`"
+                                      class="pd-toggle"
+                                      :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'"
+                                      @click.stop="togglePresenza(sogg, 'attrezzatura', gruppo.impresa.id)">
+                                <span class="pd-toggle__knob" aria-hidden="true"></span>
+                              </button>
+                              <button type="button" class="pd-riga__info"
+                                      @click="espanso = !espanso"
+                                      :aria-expanded="espanso ? 'true' : 'false'"
+                                      :aria-label="`Dettagli attrezzatura`">
+                                <span class="pd-riga__nome" x-text="sogg.tipologia || sogg.tipo || ''"></span>
+                                <span class="pd-riga__meta" x-text="sogg.descrizione || ''"></span>
+                              </button>
+                              <span role="img" class="pd-semaforo"
+                                    :class="`pd-semaforo--${semaforoRiga(sogg, 'attrezzatura', gruppo.impresa.id)}`"
+                                    :aria-label="`Semaforo documenti: ${semaforoRiga(sogg, 'attrezzatura', gruppo.impresa.id)}`"></span>
+                            </div>
+                            <div x-show="espanso" x-cloak class="pd-riga__nota sc-stack">
+                              <template x-if="presenzeMap[sogg.id]">
+                                <div class="sc-field">
+                                  <label class="sc-label" :for="`pd-nota-a-${sogg.id}`">Nota</label>
+                                  <textarea :id="`pd-nota-a-${sogg.id}`" class="sc-textarea" rows="2"
+                                            :value="presenzeMap[sogg.id].nota || ''"
+                                            @input="setNotaPresenza(presenzeMap[sogg.id].id_locale, $event.target.value)"
+                                            placeholder="Note opzionali…" :readonly="!modificabile"></textarea>
+                                </div>
+                              </template>
+                              <template x-if="!presenzeMap[sogg.id]">
+                                <p class="sc-field__hint">Segna la presenza per aggiungere una nota.</p>
+                              </template>
+                            </div>
+                          </li>
+                        </template>
+                      </ul>
+                    </section>
+                  </template>
+
+                  <!-- Noli -->
+                  <template x-if="gruppo.noli.length > 0">
+                    <section :aria-labelledby="`pd-h-nol-${gruppo.impresa.id}`">
+                      <h5 class="pd-sottosezione-titolo" :id="`pd-h-nol-${gruppo.impresa.id}`">Noli</h5>
+                      <ul role="list" class="pd-lista-soggetti">
+                        <template x-for="sogg in gruppo.noli" :key="sogg.id">
+                          <li x-data="{ espanso: false }" class="pd-riga">
+                            <div class="pd-riga__principale">
+                              <button type="button" role="switch"
+                                      :aria-checked="presenzeMap[sogg.id]?.presente ? 'true' : 'false'"
+                                      :aria-label="`Presenza nolo: ${sogg.oggetto || ''}`"
+                                      class="pd-toggle"
+                                      :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'"
+                                      @click.stop="togglePresenza(sogg, 'nolo', gruppo.impresa.id)">
+                                <span class="pd-toggle__knob" aria-hidden="true"></span>
+                              </button>
+                              <button type="button" class="pd-riga__info"
+                                      @click="espanso = !espanso"
+                                      :aria-expanded="espanso ? 'true' : 'false'"
+                                      :aria-label="`Dettagli nolo`">
+                                <span class="pd-riga__nome" x-text="(sogg.oggetto || '') + (sogg.tipo ? ' (' + sogg.tipo + ')' : '')"></span>
+                                <span class="pd-riga__meta" x-text="sogg.noleggiante_nome || nomeImpresa(sogg.impresa_noleggiante_id) || ''"></span>
+                              </button>
+                              <span role="img" class="pd-semaforo"
+                                    :class="`pd-semaforo--${semaforoRiga(sogg, 'nolo', gruppo.impresa.id)}`"
+                                    :aria-label="`Semaforo documenti: ${semaforoRiga(sogg, 'nolo', gruppo.impresa.id)}`"></span>
+                            </div>
+                            <div x-show="espanso" x-cloak class="pd-riga__nota sc-stack">
+                              <template x-if="presenzeMap[sogg.id]">
+                                <div class="sc-field">
+                                  <label class="sc-label" :for="`pd-nota-n-${sogg.id}`">Nota</label>
+                                  <textarea :id="`pd-nota-n-${sogg.id}`" class="sc-textarea" rows="2"
+                                            :value="presenzeMap[sogg.id].nota || ''"
+                                            @input="setNotaPresenza(presenzeMap[sogg.id].id_locale, $event.target.value)"
+                                            placeholder="Note opzionali…" :readonly="!modificabile"></textarea>
+                                </div>
+                              </template>
+                              <template x-if="!presenzeMap[sogg.id]">
+                                <p class="sc-field__hint">Segna la presenza per aggiungere una nota.</p>
+                              </template>
+                            </div>
+                          </li>
+                        </template>
+                      </ul>
+                    </section>
+                  </template>
+
+                </div><!-- /corpo collassabile -->
+              </div><!-- /sc-card impresa -->
+            </template>
+          </div><!-- /sc-stack gruppi -->
+        </template>
+
+        <!-- Presenze non in elenco (sempre visibili, indipendenti dall'anagrafica) -->
+        <template x-if="v.presenze.filter(pr => pr.origine === 'non_in_elenco').length > 0">
+          <section class="sc-card sc-stack" aria-labelledby="pd-non-elenco-titolo">
+            <h4 id="pd-non-elenco-titolo" class="sc-card__title">Non in elenco</h4>
+            <ul role="list" class="pd-lista-soggetti">
+              <template x-for="pr in v.presenze.filter(p => p.origine === 'non_in_elenco')" :key="pr.id_locale">
+                <li class="pd-riga">
+                  <div class="pd-riga__principale">
+                    <span role="img" class="pd-semaforo pd-semaforo--grigio" aria-label="Non verificato"></span>
+                    <span class="pd-riga__info--static">
+                      <span class="pd-riga__nome" x-text="pr.nome_dichiarato || pr.etichetta || ''"></span>
+                      <span class="pd-riga__meta">
+                        <span x-text="pr.tipo"></span>
+                        <template x-if="pr.impresa_dichiarata"><span> · <span x-text="pr.impresa_dichiarata"></span></span></template>
+                      </span>
+                    </span>
+                    <button type="button" class="sc-iconbtn"
+                            @click="rimuoviPresenza(pr.id_locale)"
+                            :aria-label="`Rimuovi ${pr.nome_dichiarato || pr.etichetta}`"
+                            :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                  </div>
+                </li>
+              </template>
+            </ul>
+          </section>
+        </template>
+
+        <button type="button" class="sc-btn sc-btn--secondary sc-btn--block" @click="apriSheetNonInElenco()"
+                :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">
+          + Aggiungi presente non in elenco
+        </button>
+      </section>
+
+      <!-- =============================================================== -->
+      <!-- === STEP 3 — PRESENTI ========================================= -->
       <!-- =============================================================== -->
       <section class="sc-stack" x-show="stepCorrente === STEP.PRESENTI" aria-label="Presenti">
         <div class="sc-row sc-row--between">
@@ -575,11 +911,14 @@
               </div>
               <div class="sc-row ed-presente__azioni">
                 <button type="button" class="sc-btn sc-btn--secondary" @click="apriFirma({tipo:'presente', presenteId:p.id_locale})"
-                        :aria-label="`Firma per ${p.nome_cognome}`">Firma</button>
+                        :aria-label="`Firma per ${p.nome_cognome}`"
+                        :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">Firma</button>
                 <button type="button" class="sc-btn sc-btn--ghost" @click="apriRifiuto(p.id_locale)"
-                        :aria-label="`Registra rifiuto firma per ${p.nome_cognome}`">Rifiuto</button>
+                        :aria-label="`Registra rifiuto firma per ${p.nome_cognome}`"
+                        :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">Rifiuto</button>
                 <button type="button" class="sc-iconbtn" @click="rimuoviPresente(p.id_locale)"
-                        :aria-label="`Rimuovi ${p.nome_cognome}`">
+                        :aria-label="`Rimuovi ${p.nome_cognome}`"
+                        :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                   </svg>
@@ -589,7 +928,8 @@
           </template>
         </ul>
 
-        <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="apriSheetPresente()">
+        <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="apriSheetPresente()"
+                :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">
           + Aggiungi presente
         </button>
       </section>
@@ -609,7 +949,8 @@
             <li class="sc-card sc-stack">
               <div class="sc-row sc-row--between">
                 <h4 x-text="`NC ${idx + 1}`"></h4>
-                <button type="button" class="sc-iconbtn" @click="rimuoviNc(nc.id_locale)" :aria-label="`Rimuovi NC ${idx + 1}`">
+                <button type="button" class="sc-iconbtn" @click="rimuoviNc(nc.id_locale)" :aria-label="`Rimuovi NC ${idx + 1}`"
+                        :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                   </svg>
@@ -624,6 +965,7 @@
                     <button type="button" class="sc-segmented__option ed-nc-livello" :class="`is-${liv}`" role="radio"
                             :aria-checked="nc.livello === liv ? 'true' : 'false'"
                             :tabindex="nc.livello === liv ? '0' : '-1'"
+                            :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'"
                             @click="impostaLivelloNc(nc.id_locale, liv)"
                             x-text="liv.charAt(0).toUpperCase() + liv.slice(1)"></button>
                   </template>
@@ -633,7 +975,7 @@
               <!-- Impresa (opzionale) -->
               <div class="sc-field">
                 <label class="sc-label" :for="`ed-nc-imp-${nc.id_locale}`">Impresa</label>
-                <select :id="`ed-nc-imp-${nc.id_locale}`" class="sc-select" x-model="nc.impresa_id" @change="onCampoModificato()">
+                <select :id="`ed-nc-imp-${nc.id_locale}`" class="sc-select" x-model="nc.impresa_id" @change="onCampoModificato()" :disabled="!modificabile">
                   <option value="">Nessuna impresa</option>
                   <template x-for="imp in impreseAnagrafica" :key="imp.id">
                     <option :value="imp.id" x-text="imp.ragione_sociale"></option>
@@ -645,7 +987,7 @@
               <div class="sc-field">
                 <label class="sc-label" :for="`ed-nc-desc-${nc.id_locale}`">Descrizione</label>
                 <textarea :id="`ed-nc-desc-${nc.id_locale}`" class="sc-textarea" x-model="nc.descrizione" @input="onCampoModificato()" rows="3"
-                          placeholder="Descrivi la non conformità…"></textarea>
+                          placeholder="Descrivi la non conformità…" :readonly="!modificabile"></textarea>
                 <p class="sc-field__hint">
                   <span x-text="lunghezzaDescrizione(nc)"></span> caratteri (min 20 consigliati)
                 </p>
@@ -659,7 +1001,8 @@
           </template>
         </ul>
 
-        <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="aggiungiNc()">
+        <button type="button" class="sc-btn sc-btn--primary sc-btn--block" @click="aggiungiNc()"
+                :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">
           + Aggiungi non conformità
         </button>
       </section>
@@ -670,7 +1013,30 @@
       <section class="sc-stack" x-show="stepCorrente === STEP.FIRME" aria-label="Firme e finalizzazione">
         <h3>Firme e finalizzazione</h3>
 
-        <!-- Riepilogo firme presenti -->
+        <!-- Anteprima pre-firma: il firmatario legge il verbale completo prima
+             di firmare. I controlli di firma restano disabilitati finché non si
+             scorre fino in fondo (anteprimaLetta). -->
+        <section class="sc-card sc-stack" aria-labelledby="ed-anteprima-titolo">
+          <h4 id="ed-anteprima-titolo">Bozza verbale da firmare</h4>
+          <div class="ed-anteprima-scroll"
+               x-ref="anteprimaScroll"
+               tabindex="0"
+               role="document"
+               x-html="_corpoHtmlCache"
+               aria-label="Contenuto del verbale. Scorri fino in fondo per abilitare la firma.">
+          </div>
+          <p class="sc-field__hint ed-anteprima-avviso">
+            Le parti narrative del verbale (stato dei luoghi, prescrizioni, descrizioni delle
+            non conformità) saranno rifinite linguisticamente in fase di archiviazione, senza
+            alterare i fatti rilevati, le presenze, le firme né i dati.
+          </p>
+          <p class="ed-anteprima-gating" x-show="!anteprimaLetta" x-cloak
+             role="status" aria-live="polite">
+            Scorri il verbale fino in fondo per abilitare la firma.
+          </p>
+        </section>
+
+        <!-- Firme dei presenti — bottoni disabilitati finché anteprima non letta -->
         <section class="sc-card sc-stack" aria-labelledby="ed-firme-pres-titolo">
           <h4 id="ed-firme-pres-titolo">Firme dei presenti</h4>
           <ul role="list" class="sc-stack sc-stack--tight">
@@ -680,9 +1046,18 @@
                 <span>
                   <span x-show="statoFirmaPresente(p) === 'firmato'" x-cloak>✍️ Firmato</span>
                   <span x-show="statoFirmaPresente(p) === 'rifiutato'" x-cloak>⚠️ Rifiutata</span>
-                  <button type="button" class="sc-btn sc-btn--secondary" x-show="statoFirmaPresente(p) === 'da_firmare'" x-cloak
-                          @click="apriFirma({tipo:'presente', presenteId:p.id_locale})"
-                          :aria-label="`Firma per ${p.nome_cognome}`">Firma ora</button>
+                  <span x-show="statoFirmaPresente(p) === 'da_firmare'" x-cloak class="sc-row sc-row--wrap">
+                    <button type="button" class="sc-btn sc-btn--secondary"
+                            @click="apriFirma({tipo:'presente', presenteId:p.id_locale})"
+                            :disabled="!anteprimaLetta"
+                            :aria-disabled="!anteprimaLetta ? 'true' : 'false'"
+                            :aria-label="`Firma con il dito per ${p.nome_cognome}`">Firma ora</button>
+                    <button type="button" class="sc-btn sc-btn--secondary"
+                            @click="apriImportaFirma({tipo:'presente', presenteId:p.id_locale})"
+                            :disabled="!anteprimaLetta"
+                            :aria-disabled="!anteprimaLetta ? 'true' : 'false'"
+                            :aria-label="`Carica immagine firma per ${p.nome_cognome}`">Carica immagine</button>
+                  </span>
                 </span>
               </li>
             </template>
@@ -690,7 +1065,7 @@
           </ul>
         </section>
 
-        <!-- Firma redattore -->
+        <!-- Firma redattore — bottoni disabilitati finché anteprima non letta -->
         <section class="sc-card sc-stack" aria-labelledby="ed-firma-red-titolo">
           <h4 id="ed-firma-red-titolo">Firma del redattore</h4>
           <p class="sc-field__hint sc-mt-0" x-text="`${v.redattore.nome_cognome || ''}${v.redattore.qualifica ? ' — ' + v.redattore.qualifica : ''}`"></p>
@@ -703,8 +1078,13 @@
           </template>
 
           <div class="sc-row sc-row--wrap">
-            <button type="button" class="sc-btn sc-btn--secondary" @click="usaFirmaPermanente()">Usa firma permanente</button>
-            <button type="button" class="sc-btn sc-btn--secondary" @click="apriFirma({tipo:'redattore'})">Firma ora</button>
+            <button type="button" class="sc-btn sc-btn--secondary" @click="usaFirmaPermanente()"
+                    :disabled="!anteprimaLetta" :aria-disabled="!anteprimaLetta ? 'true' : 'false'">Usa firma permanente</button>
+            <button type="button" class="sc-btn sc-btn--secondary" @click="apriFirma({tipo:'redattore'})"
+                    :disabled="!anteprimaLetta" :aria-disabled="!anteprimaLetta ? 'true' : 'false'">Firma ora</button>
+            <button type="button" class="sc-btn sc-btn--secondary"
+                    @click="apriImportaFirma({tipo:'redattore'})"
+                    :disabled="!anteprimaLetta" :aria-disabled="!anteprimaLetta ? 'true' : 'false'">Carica immagine</button>
             <button type="button" class="sc-btn sc-btn--ghost" x-show="v.redattore.firma_png_base64" x-cloak @click="rimuoviFirmaRedattore()">Rimuovi</button>
           </div>
         </section>
@@ -731,9 +1111,11 @@
         <span class="ed-actionbar__spacer"></span>
         <button type="button" class="sc-btn sc-btn--primary" @click="avanti()"
                 x-show="stepCorrente < NUM_STEP"
-                :disabled="!completo(stepCorrente)" :aria-disabled="!completo(stepCorrente) ? 'true' : 'false'">Avanti</button>
+                :disabled="!completo(stepCorrente) || !modificabile"
+                :aria-disabled="(!completo(stepCorrente) || !modificabile) ? 'true' : 'false'">Avanti</button>
         <button type="button" class="sc-btn sc-btn--primary" @click="apriFinalizza()"
-                x-show="stepCorrente === NUM_STEP" x-cloak>Finalizza e invia</button>
+                x-show="stepCorrente === NUM_STEP" x-cloak
+                :disabled="!modificabile" :aria-disabled="!modificabile ? 'true' : 'false'">Finalizza e invia</button>
       </div>
 
       <!-- =============================================================== -->
@@ -802,6 +1184,63 @@
       </template>
 
       <!-- =============================================================== -->
+      <!-- === MODAL: AGGIUNGI NON IN ELENCO (step Presenze) ============ -->
+      <!-- =============================================================== -->
+      <template x-if="sheetNonInElencoAperto">
+        <div class="sc-overlay" @click.self="chiudiSheetNonInElenco()">
+          <div class="sc-sheet" x-ref="sheetNonInElenco" role="dialog" aria-modal="true"
+               aria-labelledby="pd-sheet-titolo" tabindex="-1">
+            <div class="sc-sheet__header">
+              <h3 id="pd-sheet-titolo" class="sc-card__title">Aggiungi presenza non in elenco</h3>
+              <button type="button" class="sc-iconbtn" @click="chiudiSheetNonInElenco()" aria-label="Chiudi">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="sc-stack">
+              <div class="sc-field">
+                <label class="sc-label" for="pd-nie-nome">Nome dichiarato <span class="sc-label__required" aria-hidden="true">*</span></label>
+                <input id="pd-nie-nome" class="sc-input" type="text" x-model="nonInElenco.nome_dichiarato"
+                       aria-required="true" placeholder="Nome e cognome o identificativo">
+              </div>
+              <div class="sc-field">
+                <label class="sc-label" for="pd-nie-impresa">Impresa dichiarata</label>
+                <input id="pd-nie-impresa" class="sc-input" type="text" x-model="nonInElenco.impresa_dichiarata"
+                       placeholder="Ragione sociale dichiarata">
+              </div>
+              <div class="sc-field">
+                <span class="sc-label" id="pd-nie-tipo-label">Tipo</span>
+                <div class="sc-segmented" role="radiogroup" x-radiogroup aria-labelledby="pd-nie-tipo-label">
+                  <button type="button" class="sc-segmented__option" role="radio"
+                          :aria-checked="nonInElenco.tipo==='lavoratore'?'true':'false'"
+                          :tabindex="nonInElenco.tipo==='lavoratore'?'0':'-1'"
+                          @click="nonInElenco.tipo='lavoratore'">Uomo</button>
+                  <button type="button" class="sc-segmented__option" role="radio"
+                          :aria-checked="nonInElenco.tipo==='mezzo'?'true':'false'"
+                          :tabindex="nonInElenco.tipo==='mezzo'?'0':'-1'"
+                          @click="nonInElenco.tipo='mezzo'">Mezzo</button>
+                  <button type="button" class="sc-segmented__option" role="radio"
+                          :aria-checked="nonInElenco.tipo==='attrezzatura'?'true':'false'"
+                          :tabindex="nonInElenco.tipo==='attrezzatura'?'0':'-1'"
+                          @click="nonInElenco.tipo='attrezzatura'">Attrezzatura</button>
+                </div>
+              </div>
+              <div class="sc-field">
+                <label class="sc-label" for="pd-nie-nota">Nota</label>
+                <textarea id="pd-nie-nota" class="sc-textarea" rows="2"
+                          x-model="nonInElenco.nota" placeholder="Note opzionali…"></textarea>
+              </div>
+              <button type="button" class="sc-btn sc-btn--primary sc-btn--block"
+                      @click="aggiungiPresenteNonInElenco()"
+                      :disabled="!nonInElenco.nome_dichiarato.trim()"
+                      :aria-disabled="!nonInElenco.nome_dichiarato.trim() ? 'true' : 'false'">
+                Aggiungi
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- =============================================================== -->
       <!-- === MODAL: RIFIUTO FIRMA ====================================== -->
       <!-- =============================================================== -->
       <template x-if="modalRifiutoAperto">
@@ -826,6 +1265,18 @@
           </div>
         </div>
       </template>
+
+      <!-- =============================================================== -->
+      <!-- === INPUT FILE FIRMA DA IMMAGINE (nascosto, attivato da JS) == -->
+      <!-- aria-hidden: il controllo reale è il bottone "Carica immagine" -->
+      <!-- =============================================================== -->
+      <input type="file"
+             accept="image/png,image/jpeg"
+             x-ref="inputFirmaImmagine"
+             @change="gestisciFileImportaFirma($event)"
+             class="sc-visually-hidden"
+             aria-hidden="true"
+             tabindex="-1">
 
       <!-- =============================================================== -->
       <!-- === MODAL: CANVAS FIRMA ======================================= -->

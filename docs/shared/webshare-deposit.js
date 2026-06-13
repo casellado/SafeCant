@@ -41,6 +41,17 @@ const SCHEMA_VERSION = '1.0';
 const GENERATORE_VERSIONE = '1.0.0';
 
 /**
+ * Etichette leggibili del semaforo presenze, per il corpo HTML.
+ * @type {Record<string,string>}
+ */
+const SEMAFORO_LABEL = {
+  verde:  'Regolare',
+  giallo: 'In scadenza',
+  rosso:  'Scaduto / Irregolare',
+  grigio: 'Non verificato',
+};
+
+/**
  * Etichette leggibili delle condizioni meteo, per il corpo HTML.
  * @type {Record<string,string>}
  */
@@ -188,6 +199,44 @@ export function generaCorpoHtmlSopralluogo(v) {
     parti.push('</section>');
   }
 
+  // --- Presenze rilevate in cantiere (in coda, dopo tutte le sezioni firme) ---
+  // SafeHub Archivio dovrà renderizzare questo blocco nel DOCX (Fase 3).
+  const presenze = Array.isArray(v.presenze) ? v.presenze : [];
+  if (presenze.length > 0) {
+    // Raggruppiamo per impresa_ref per la leggibilità del documento ufficiale.
+    const byImpresa = new Map();
+    for (const pr of presenze) {
+      const key = pr.impresa_ref || '__none__';
+      if (!byImpresa.has(key)) byImpresa.set(key, []);
+      byImpresa.get(key).push(pr);
+    }
+
+    parti.push('<section class="presenze-cantiere">');
+    parti.push('<h2>Presenze Rilevate in Cantiere</h2>');
+
+    for (const [, righe] of byImpresa) {
+      // Impresa dell'impresa_ref: usiamo l'etichetta già nel record per autoconsistenza.
+      parti.push('<table><thead><tr>');
+      parti.push('<th>Soggetto</th><th>Tipo</th><th>Ora rilevazione</th><th>Regolarità</th><th>Nota</th>');
+      parti.push('</tr></thead><tbody>');
+      for (const pr of righe) {
+        const etich    = escapeHtml(pr.etichetta || pr.nome_dichiarato || '');
+        const tipo     = escapeHtml(pr.tipo || '');
+        const ora      = pr.ora_rilevazione
+          ? escapeHtml(new Date(pr.ora_rilevazione).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }))
+          : '—';
+        const semLabel = escapeHtml(SEMAFORO_LABEL[pr.semaforo] || pr.semaforo || '');
+        const nota     = pr.nota ? escapeHtmlMultiline(pr.nota) : '';
+        // I soggetti non in elenco sono evidenziati con un asterisco nel documento.
+        const marcaNie = pr.origine === 'non_in_elenco' ? ' *' : '';
+        parti.push(`<tr><td>${etich}${marcaNie}</td><td>${tipo}</td><td>${ora}</td><td>${semLabel}</td><td>${nota}</td></tr>`);
+      }
+      parti.push('</tbody></table>');
+    }
+    parti.push('<p><em>* Soggetto non presente nell\'elenco anagrafica autorizzata.</em></p>');
+    parti.push('</section>');
+  }
+
   return parti.join('');
 }
 
@@ -261,6 +310,23 @@ export function componiFileInterscambio(v, opzioni = {}) {
     })),
 
     imprese_presenti: Array.from(impreseMap.values()),
+
+    // presenze[]: soggetti rilevati operativamente in cantiere per impresa.
+    // Distinto da presenti[] (firmatari della riunione) — i due array sono complementari.
+    presenze: (Array.isArray(v.presenze) ? v.presenze : []).map((pr) => ({
+      id_locale:          pr.id_locale,
+      tipo:               pr.tipo,
+      origine:            pr.origine || 'elenco',
+      anagrafica_ref:     pr.anagrafica_ref || null,
+      impresa_ref:        pr.impresa_ref || null,
+      etichetta:          pr.etichetta || '',
+      impresa_dichiarata: pr.impresa_dichiarata || null,
+      nome_dichiarato:    pr.nome_dichiarato || null,
+      presente:           !!pr.presente,
+      ora_rilevazione:    pr.ora_rilevazione || null,
+      nota:               pr.nota || null,
+      semaforo:           pr.semaforo || 'grigio',
+    })),
 
     nc_drafts: (Array.isArray(v.nc_drafts) ? v.nc_drafts : []).map((nc) => ({
       id_locale: nc.id_locale,

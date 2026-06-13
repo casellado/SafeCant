@@ -32,9 +32,12 @@ import {
   eliminaVerbale,
   getDaInviare,
   getTutteAnagrafiche,
+  getVerbale,
+  salvaVerbale,
+  rimuoviDaCoda,
 } from '../../shared/idb.js';
 import { announce, trapFocus } from '../../shared/a11y.js';
-import { formattaDataIt, tronca, escapeHtml } from '../../shared/utils.js';
+import { formattaDataIt, tronca, escapeHtml, timestampIso } from '../../shared/utils.js';
 import { inviaDaGesto } from '../../shared/coda-sync.js';
 
 /**
@@ -64,10 +67,14 @@ export default function cruscotto() {
     pickerAperto: false,
     anagrafichePicker: [],
 
+    /** Verbale su cui è aperta la conferma di sblocco, o null. */
+    verbaleInSblocco: null,
+
     /* --- Riferimenti per teardown --- */
     _releaseTrapElimina: null,
     _releaseTrapAnteprima: null,
     _releaseTrapPicker: null,
+    _releaseTrapSblocco: null,
 
     /* ===================================================================
      * LIFECYCLE
@@ -101,6 +108,7 @@ export default function cruscotto() {
       if (this._releaseTrapElimina) this._releaseTrapElimina();
       if (this._releaseTrapAnteprima) this._releaseTrapAnteprima();
       if (this._releaseTrapPicker) this._releaseTrapPicker();
+      if (this._releaseTrapSblocco) this._releaseTrapSblocco();
     },
 
     /**
@@ -401,6 +409,98 @@ export default function cruscotto() {
         announce('Non è stato possibile eliminare il verbale. Riprova.', 'assertive');
       } finally {
         this.annullaElimina();
+      }
+    },
+
+    /* ===================================================================
+     * SBLOCCO BOZZA (pronto_invio → bozza)
+     * =================================================================== */
+
+    /**
+     * Vero se il verbale può essere sbloccato (solo pronto_invio).
+     * I verbali inviati sono un punto di non ritorno: il documento è già uscito
+     * verso SafeHub Archivio e l'impresa.
+     * @param {object} v
+     * @returns {boolean}
+     */
+    eSbloccabile(v) {
+      return v?.stato === 'pronto_invio';
+    },
+
+    /**
+     * Apre il dialog di conferma sblocco. Solo per pronto_invio (difesa oltre
+     * al markup). Focus-trap + Esc per accessibilità.
+     * @param {object} v
+     * @returns {void}
+     */
+    chiediSblocca(v) {
+      if (!this.eSbloccabile(v)) return;
+      this.verbaleInSblocco = v;
+      this.$nextTick(() => {
+        const dialog = this.$refs.modalSblocca;
+        if (dialog) this._releaseTrapSblocco = trapFocus(dialog, { onEscape: () => this.annullaSblocca() });
+      });
+    },
+
+    /** Annulla il flusso di sblocco e rilascia il trap. */
+    annullaSblocca() {
+      this.verbaleInSblocco = null;
+      if (this._releaseTrapSblocco) { this._releaseTrapSblocco(); this._releaseTrapSblocco = null; }
+    },
+
+    /**
+     * Esegue lo sblocco confermato. Ordine obbligatorio per sicurezza in caso
+     * di crash a metà operazione (i passi sono su store IDB diversi, non atomici):
+     *  1. Rimuovi dalla coda PRIMA — se crasha qui, stato resta pronto_invio (coerente).
+     *  2. Invalida tutte le firme — chi aveva firmato deve rifirmare sulla versione corretta.
+     *  3. Traccia l'evento nel record (audit trail leggero).
+     *  4. Cambia stato a 'bozza' ULTIMO — se crasha prima, lo stato non è incoerente.
+     *  5. Persisti.
+     * @returns {Promise<void>}
+     */
+    async confermaSblocca() {
+      const vSummary = this.verbaleInSblocco;
+      if (!vSummary) return;
+      if (!this.eSbloccabile(vSummary)) return;
+      try {
+        // 1. Togli dalla coda PRIMA per non inviare di nuovo il vecchio file.
+        await rimuoviDaCoda(vSummary.id).catch(() => {});
+
+        // 2. Carica il record completo (la lista verbali ha solo i campi top-level).
+        const rec = await getVerbale(vSummary.id);
+        if (!rec) throw new Error('Verbale non trovato.');
+
+        // 3. Invalida le firme dei presenti: firma e timestamp azzerati.
+        for (const p of (Array.isArray(rec.presenti) ? rec.presenti : [])) {
+          p.firmato         = false;
+          p.firma_png       = null;
+          p.firma_png_base64 = null;
+          p.timestamp_firma = null;
+          p.rifiuto_firma   = false;
+          p.motivo_rifiuto  = null;
+        }
+        // Invalida la firma del redattore.
+        if (rec.redattore) {
+          rec.redattore.firma_png_base64 = null;
+          rec.redattore.timestamp_firma  = null;
+          rec.redattore.tipo_firma       = null;
+        }
+
+        // 4. Audit trail leggero: data/ora sblocco e contatore.
+        rec.sbloccato_il    = timestampIso();
+        rec.numero_sblocchi = (rec.numero_sblocchi || 0) + 1;
+
+        // 5. Cambia stato ULTIMO: invariante di sicurezza contro crash.
+        rec.stato = 'bozza';
+        await salvaVerbale(rec);
+
+        await this.ricarica();
+        announce(`Verbale del ${formattaDataIt(vSummary.data_sopralluogo)} riaperto come bozza. Le firme sono state azzerate.`);
+      } catch (err) {
+        console.error('[cruscotto] Sblocco fallito:', err);
+        announce('Non è stato possibile sbloccare il verbale. Riprova.', 'assertive');
+      } finally {
+        this.annullaSblocca();
       }
     },
   };

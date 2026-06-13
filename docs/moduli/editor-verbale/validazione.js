@@ -7,11 +7,12 @@
  *
  * COSA VALIDANO (progettazione 6.2–6.5)
  *  - Step 1 Dati generali: data, oggetto, stato luoghi, prescrizioni obbligatori.
- *  - Step 2 Presenti: almeno 1 presente; ogni presente o ha firmato o ha un
+ *  - Step 2 Presenze: facoltativo, sempre completabile (rileva chi è in cantiere).
+ *  - Step 3 Presenti: almeno 1 presente; ogni presente o ha firmato o ha un
  *    rifiuto con motivo.
- *  - Step 3 NC: opzionali, ma se presenti ognuna deve avere una descrizione
+ *  - Step 4 NC: opzionali, ma se presenti ognuna deve avere una descrizione
  *    (e un livello, da cui dipende la scadenza).
- *  - Step 4 Firme/Finalizza: firma del redattore presente.
+ *  - Step 5 Firme/Finalizza: firma del redattore presente.
  *  - Pre-finalizzazione: aggrega tutto e produce un elenco di "cosa manca",
  *    ciascuna voce con lo step a cui rimandare (progettazione 6.5).
  *
@@ -30,15 +31,22 @@
 import { nonVuoto, isDataIsoValida, aggiungiGiorni, aggiungiOre } from '../../shared/utils.js';
 
 /** Numero di step dello stepper. */
-export const NUM_STEP = 4;
+export const NUM_STEP = 5;
 
 /** Indici simbolici degli step (1-based, come mostrati all'utente). */
 export const STEP = Object.freeze({
-  DATI: 1,
-  PRESENTI: 2,
-  NC: 3,
-  FIRME: 4,
+  DATI:     1,
+  PRESENZE: 2,
+  PRESENTI: 3,
+  NC:       4,
+  FIRME:    5,
 });
+
+/**
+ * Soglia in giorni per il semaforo GIALLO: un documento che scade entro questa
+ * distanza dalla data del sopralluogo è "in scadenza". Costante di dominio.
+ */
+export const SOGLIA_SEMAFORO_GIORNI = 30;
 
 /** Livelli NC ammessi, in ordine di gravità decrescente. */
 export const LIVELLI_NC = Object.freeze(['gravissima', 'grave', 'media', 'lieve']);
@@ -138,7 +146,96 @@ export function validaNc(v) {
 }
 
 /**
- * Step 4 — Firma del redattore. Deve esistere una firma del redattore
+ * Step 2 — Presenze. Sempre valido: lo step è facoltativo per design (il sistema
+ * guida senza bloccare). Non produce mancanze bloccanti nella pre-finalizzazione.
+ * @param {object} _v  Record verbale (non usato, firma uniforme con gli altri).
+ * @returns {{valido: true, errori: {}}}
+ */
+export function validaPresenze(_v) {
+  return { valido: true, errori: {} };
+}
+
+/**
+ * Calcola il semaforo di regolarità documentale per un soggetto dell'anagrafica.
+ * Funzione PURA: nessun DOM, nessuna dipendenza da Alpine.
+ *
+ * RIFERIMENTO TEMPORALE: la data del sopralluogo, NON oggi. Così il verbale è
+ * coerente con il momento del rilievo (anche se riletto mesi dopo).
+ *
+ * STATI:
+ *  ROSSO  — almeno un documento scaduto PRIMA del sopralluogo, OPPURE
+ *            patenteCrediti impresa SOSPESA o REVOCATA.
+ *  GIALLO — almeno un documento scade entro SOGLIA_SEMAFORO_GIORNI dal sopralluogo.
+ *  VERDE  — documenti rilevanti presenti e tutti validi.
+ *  GRIGIO — nessun dato di scadenza disponibile (anti-falso-verde).
+ *
+ * @param {object}      soggetto           Record anagrafica (lavoratore/mezzo/ecc.).
+ * @param {string}      tipo               'lavoratore'|'mezzo'|'attrezzatura'|'nolo'.
+ * @param {string}      dataSopralluogoIso Data sopralluogo (AAAA-MM-GG).
+ * @param {object|null} [impresa]          Record impresa (per patenteCrediti lavoratori).
+ * @returns {'verde'|'giallo'|'rosso'|'grigio'}
+ */
+export function calcolaSemaforo(soggetto, tipo, dataSopralluogoIso, impresa = null) {
+  // Intenzionale: senza una data di sopralluogo valida il verbale è incompleto;
+  // grigio per TUTTI i tipi — noli inclusi — per non indurre falsa sicurezza.
+  if (!isDataIsoValida(dataSopralluogoIso)) return 'grigio';
+
+  const rif = dataSopralluogoIso;
+  const rifPiuSoglia = aggiungiGiorni(rif, SOGLIA_SEMAFORO_GIORNI);
+
+  let haDocumentiRilevanti = false;
+  let scaduto = false;
+  let inScadenza = false;
+
+  const verificaData = (scadenza) => {
+    if (!scadenza || typeof scadenza !== 'string') return;
+    const d = scadenza.slice(0, 10); // accetta ISO date e ISO datetime
+    if (!isDataIsoValida(d)) return;
+    haDocumentiRilevanti = true;
+    if (d < rif) scaduto = true;                 // scaduto: prima del sopralluogo
+    else if (d <= rifPiuSoglia) inScadenza = true; // in scadenza: entro la soglia
+  };
+
+  if (tipo === 'lavoratore') {
+    verificaData(soggetto?.attestatoFormazione?.scadenza);
+    verificaData(soggetto?.visitaMedica?.scadenza);
+    for (const ab of (Array.isArray(soggetto?.abilitazioni) ? soggetto.abilitazioni : [])) {
+      verificaData(ab?.scadenza);
+    }
+    // patenteCrediti è sull'impresa (non sul lavoratore)
+    const statoPatente = impresa?.patenteCrediti?.stato;
+    if (statoPatente) {
+      haDocumentiRilevanti = true;
+      if (statoPatente === 'SOSPESA' || statoPatente === 'REVOCATA') scaduto = true;
+    }
+  } else if (tipo === 'mezzo') {
+    for (const vp of (Array.isArray(soggetto?.verifichePeriodiche) ? soggetto.verifichePeriodiche : [])) {
+      verificaData(vp?.prossima);
+    }
+  } else if (tipo === 'attrezzatura') {
+    for (const vp of (Array.isArray(soggetto?.verifiche) ? soggetto.verifiche : [])) {
+      verificaData(vp?.prossima);
+    }
+    for (const doc of (Array.isArray(soggetto?.documentiSpecifici) ? soggetto.documentiSpecifici : [])) {
+      verificaData(doc?.scadenza);
+    }
+  } else if (tipo === 'nolo') {
+    // L'attestazione di buono stato NON ha una data di scadenza: o è presente o
+    // non lo è. Verde = attestazione fornita; grigio = dati non valutabili.
+    // Non esiste un concetto di "in scadenza" o "scaduta" per questo documento.
+    const absc = soggetto?.attestazioneBuonoStato;
+    if (absc?.presente === true) return 'verde';
+    return 'grigio';
+  }
+
+  if (!haDocumentiRilevanti) return 'grigio';
+  if (scaduto) return 'rosso';
+  if (inScadenza) return 'giallo';
+  return 'verde';
+}
+
+/**
+ * Step 5 — Firma del redattore. Deve esistere una firma del redattore
  * (permanente o tracciata al momento). Nome/qualifica del redattore arrivano
  * dalle impostazioni; qui controlliamo la firma, che è il requisito dello step.
  * @param {object} v
@@ -160,10 +257,11 @@ export function validaFirmaRedattore(v) {
  */
 export function stepCompleto(step, v) {
   switch (step) {
-    case STEP.DATI: return validaDatiGenerali(v).valido;
+    case STEP.DATI:     return validaDatiGenerali(v).valido;
+    case STEP.PRESENZE: return validaPresenze(v).valido;
     case STEP.PRESENTI: return validaPresenti(v).valido;
-    case STEP.NC: return validaNc(v).valido;
-    case STEP.FIRME: return validaFirmaRedattore(v).valido;
+    case STEP.NC:       return validaNc(v).valido;
+    case STEP.FIRME:    return validaFirmaRedattore(v).valido;
     default: return false;
   }
 }
