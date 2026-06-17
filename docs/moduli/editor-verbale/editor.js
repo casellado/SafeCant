@@ -1142,7 +1142,18 @@ export default function editorVerbale() {
           this.v.stato = 'inviato';
           await this._persisti();
           await rimuoviDaCoda(this.v.id).catch(() => {});
-          announce('Verbale inviato.');
+          if (risultato.stato === 'scaricato') {
+            // Download (desktop, oppure annullamento del foglio di condivisione): il
+            // file è uscito ma NON è ancora su OneDrive. Il deposito su OneDrive è
+            // manuale (nessuna sync automatica): lo diciamo con un toast visivo
+            // persistente + aria-live, così l'utente sa cosa fare del file scaricato.
+            const msg = 'File del verbale scaricato. Caricalo su OneDrive nella cartella SafeHub-Verbali-Ricevuti.';
+            this.$store.app.mostraToast(msg);
+            announce(msg);
+          } else {
+            // Condivisione riuscita (es. iPad → app OneDrive): il file è già a destinazione.
+            announce('Verbale inviato.');
+          }
         } else {
           // Annullato o errore: resta pronto_invio e va in coda per riprovare.
           await accodaInvio({

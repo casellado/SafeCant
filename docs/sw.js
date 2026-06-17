@@ -29,7 +29,7 @@
  * generazioni.
  * @type {string}
  */
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 
 /** Nome della cache corrente. Le cache di altre versioni saranno potate. */
 const CACHE_NAME = `safecant-${CACHE_VERSION}`;

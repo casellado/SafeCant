@@ -367,8 +367,10 @@ function rilevaDispositivo() {
  * @typedef {object} EsitoCondivisione
  * @property {('condiviso'|'scaricato'|'annullato'|'errore')} stato
  *   - 'condiviso': Web Share riuscita (l'utente ha scelto OneDrive o altro).
- *   - 'scaricato': fallback download eseguito (desktop o no Web Share file).
- *   - 'annullato': l'utente ha annullato il foglio di condivisione (AbortError).
+ *   - 'scaricato': download eseguito — sia come percorso primario (desktop / no
+ *     Web Share file) sia come rete di sicurezza dopo un annullamento del foglio.
+ *   - 'annullato': l'utente ha annullato il foglio di condivisione (AbortError) E
+ *     anche il download di sicurezza è fallito (caso raro: il file non è uscito).
  *   - 'errore': fallimento imprevisto.
  * @property {string} [messaggio]  Dettaglio per log/diagnostica.
  */
@@ -407,10 +409,18 @@ export async function condividiVerbale(fileObj, nomeFile) {
       await navigator.share({ files: [file] });
       return { stato: 'condiviso' };
     } catch (err) {
-      // AbortError / NotAllowedError per annullamento utente: non è un errore
-      // di sistema. L'utente potrà ritentare dalla coda.
+      // AbortError / NotAllowedError = l'utente ha annullato/chiuso il foglio di
+      // condivisione (o non c'era una destinazione valida, tipico su Windows/Android).
+      // NON è un errore di sistema. MA per policy aziendale il download è il
+      // meccanismo PRINCIPALE (nessuna sync OneDrive automatica): garantiamo sempre
+      // un file su disco anche all'annullamento, così l'utente ha comunque qualcosa
+      // da caricare a mano su OneDrive. Ripieghiamo su 'annullato' solo se persino
+      // il download fallisce.
       if (err && (err.name === 'AbortError' || err.name === 'NotAllowedError')) {
-        return { stato: 'annullato', messaggio: err.name };
+        const esitoDownload = scaricaFile(file);
+        return esitoDownload.stato === 'scaricato'
+          ? esitoDownload
+          : { stato: 'annullato', messaggio: err.name };
       }
       // Altri errori: cadiamo sul download come rete di sicurezza.
       const esitoDownload = scaricaFile(file);

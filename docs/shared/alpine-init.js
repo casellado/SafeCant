@@ -103,6 +103,17 @@ Alpine.store('app', {
   aggiornamentoDisponibile: false,
 
   /**
+   * Messaggio del toast globale attualmente visibile, o '' se nascosto. Vive nello
+   * store (non in un modulo) perché deve sopravvivere alla navigazione tra viste:
+   * es. l'editor lo mostra al download e subito dopo torna al cruscotto.
+   * @type {string}
+   */
+  toast: '',
+
+  /** Handle del timer di auto-nascondi del toast, per non sovrapporre due toast. */
+  _toastTimer: null,
+
+  /**
    * Intento di apertura dell'editor, depositato dal cruscotto prima di navigare
    * alla rotta 'editor' (contratto di handoff). Forma:
    *   { modo: 'nuovo' | 'modifica', verbaleId: string | null }
@@ -149,6 +160,24 @@ Alpine.store('app', {
     const testo = this.impostazioni?.dimensione_testo ?? 'normale';
     html.setAttribute('data-theme', tema);
     html.setAttribute('data-text-size', testo);
+  },
+
+  /**
+   * Mostra un toast transitorio (solo feedback VISIVO). L'annuncio agli screen
+   * reader resta a carico di announce() della live region dedicata, quindi il
+   * markup del toast è aria-hidden per non annunciare due volte. Un nuovo toast
+   * azzera il timer del precedente, così non restano timer pendenti (anti-leak).
+   * @param {string} messaggio
+   * @param {number} [durataMs=7000]  Abbastanza per leggere un'istruzione.
+   * @returns {void}
+   */
+  mostraToast(messaggio, durataMs = 7000) {
+    this.toast = messaggio;
+    if (this._toastTimer) clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      this.toast = '';
+      this._toastTimer = null;
+    }, durataMs);
   },
 });
 

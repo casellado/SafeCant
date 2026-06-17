@@ -1921,6 +1921,14 @@
   <!-- =================================================================== -->
   <div id="sc-overlay-root" data-sc-keep-interactive="true"></div>
 
+  <!-- Toast globale: feedback transitorio (es. "file scaricato, caricalo su      -->
+  <!-- OneDrive"). Vive qui nell'app shell per sopravvivere alla navigazione tra  -->
+  <!-- viste. Solo VISIVO e aria-hidden: l'annuncio agli screen reader è già      -->
+  <!-- emesso via announce() (live region dedicata), così evitiamo il doppio      -->
+  <!-- annuncio. Il testo e la durata sono gestiti da $store.app.mostraToast().   -->
+  <div class="sc-toast" role="presentation" aria-hidden="true"
+       x-show="$store.app.toast" x-text="$store.app.toast" x-cloak></div>
+
   <!-- =================================================================== -->
   <!-- === FALLBACK NO-JS =============================================== -->
   <!-- SafeCant richiede JavaScript (PWA offline-first con IDB e Alpine).    -->
